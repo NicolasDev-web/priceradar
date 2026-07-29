@@ -58,6 +58,86 @@ def calcular_preco_m2(preco: float, area: float) -> float:
     return round(preco / area, 2)
 
 
+# ── Extração de bairro a partir do slug da URL ───────────────────────────────
+#
+# VivaReal e Zap NÃO expõem o bairro no JSON-LD: `address.addressLocality` traz
+# a cidade e `streetAddress` traz o logradouro. O bairro só aparece no slug da
+# URL do anúncio, imediatamente antes do nome da cidade:
+#
+#   apartamento-3-quartos-jose-bonifacio-fortaleza-com-garagem-78m2-venda-...
+#   venda-apartamento-3-quartos-com-area-de-servico-montese-fortaleza-ce-...
+#
+# Ancoramos na cidade e caminhamos para trás até bater numa palavra descritiva.
+
+# Palavras que aparecem no slug e nunca fazem parte do nome do bairro.
+# Inclui amenidades: sem elas, "com-cozinha-jangurussu" viraria
+# "Cozinha Jangurussu" em vez de "Jangurussu".
+_TOKENS_NAO_BAIRRO = frozenset({
+    'apartamento', 'apartamentos', 'apto', 'casa', 'cobertura', 'studio', 'kitnet',
+    'flat', 'loft', 'lancamento', 'lancamentos', 'imovel', 'imoveis',
+    'venda', 'vender', 'comprar', 'compra', 'aluguel', 'alugar', 'locacao',
+    'quarto', 'quartos', 'dormitorio', 'dormitorios', 'suite', 'suites',
+    'banheiro', 'banheiros', 'vaga', 'vagas', 'garagem', 'andar',
+    'com', 'sem', 'de', 'do', 'da', 'e', 'em', 'no', 'na', 'para', 'por',
+    'area', 'servico', 'lazer', 'mobiliado', 'mobiliada', 'semi', 'novo', 'nova',
+    'piscina', 'academia', 'churrasqueira', 'playground', 'elevador', 'portaria',
+    'condominio', 'salao', 'festas', 'varanda', 'sacada', 'gourmet', 'quadra',
+    'cozinha', 'sala', 'jantar', 'estar', 'closet', 'escritorio', 'lavabo',
+    'armarios', 'planejados', 'reformado', 'todo', 'otimo', 'excelente',
+})
+
+_RE_SUFIXO_ID = re.compile(r'-id-\d+$')
+_RE_MEDIDA = re.compile(r'^\d+m2$|^rs\d+$|^\d+$')
+
+
+def extrair_bairro_do_slug(url: str, cidade: str) -> str | None:
+    """
+    Extrai o bairro do slug da URL do anúncio, ancorando no nome da cidade.
+
+    Retorna None quando não há evidência — anúncios de lançamento usam outro
+    formato de slug (`/imoveis-lancamentos/nome-do-empreendimento-id-N/`) e
+    não carregam bairro. Melhor vazio que errado.
+    """
+    if not url or not cidade:
+        return None
+
+    cidade_slug = normalizar_cidade(cidade).replace(' ', '-')
+    if not cidade_slug:
+        return None
+
+    slug = url.rstrip('/').split('/')[-1]
+    slug = _RE_SUFIXO_ID.sub('', slug)
+    tokens = slug.split('-')
+
+    # A cidade pode ser multi-token ("sao-paulo"): localiza a sequência.
+    partes_cidade = cidade_slug.split('-')
+    inicio_cidade = _indice_da_sequencia(tokens, partes_cidade)
+    if inicio_cidade is None:
+        return None
+
+    bairro: list[str] = []
+    for token in reversed(tokens[:inicio_cidade]):
+        if token in _TOKENS_NAO_BAIRRO or _RE_MEDIDA.match(token):
+            break
+        bairro.insert(0, token)
+
+    if not bairro:
+        return None
+
+    nome = ' '.join(bairro).title()
+    # Bairro de uma letra ou absurdamente longo é ruído de parsing.
+    return nome if 2 < len(nome) < 45 else None
+
+
+def _indice_da_sequencia(tokens: list[str], sequencia: list[str]) -> int | None:
+    """Índice onde `sequencia` começa dentro de `tokens`, ou None."""
+    n = len(sequencia)
+    for i in range(len(tokens) - n + 1):
+        if tokens[i:i + n] == sequencia:
+            return i
+    return None
+
+
 # ── Agente 3: lista expandida de construtoras ─────────────────────────────────
 
 # Lista de construtoras/incorporadoras conhecidas — nacional + Nordeste/CE.

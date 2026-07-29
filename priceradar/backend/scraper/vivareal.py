@@ -12,6 +12,7 @@ from scraper.browser import buscar_html_playwright
 from scraper.http import buscar_html
 from scraper.parser import (
     calcular_preco_m2,
+    extrair_bairro_do_slug,
     extrair_construtora,
     extrair_nome_empreendimento,
     normalizar_cidade,
@@ -53,11 +54,21 @@ def build_vivareal_url(
     bairro: str | None = None,
     pagina: int = 1,
 ) -> str:
-    url = f"{VIVAREAL_BASE_URL}/venda/{estado}/{cidade}/apartamento_residencial/?preco_de={int(preco_min)}&preco_ate={int(preco_max)}"
+    # Bairro entra no PATH, não na query string: `&bairros=` é ignorado pelo
+    # site, enquanto `/bairros/{slug}/` filtra de verdade — medido em 29/07/2026,
+    # 25 de 30 anúncios do bairro pedido contra 3 de 30 sem o filtro.
+    caminho_bairro = ""
+    if bairro:
+        slug = normalizar_cidade(bairro).replace(' ', '-')
+        if slug:
+            caminho_bairro = f"bairros/{slug}/"
+
+    url = (
+        f"{VIVAREAL_BASE_URL}/venda/{estado}/{cidade}/{caminho_bairro}"
+        f"apartamento_residencial/?preco_de={int(preco_min)}&preco_ate={int(preco_max)}"
+    )
     if quartos:
         url += f"&quartos={quartos}"
-    if bairro:
-        url += f"&bairros={bairro.strip().lower().replace(' ', '-')}"
     if pagina > 1:
         url += f"&pagina={pagina}"
     return url
@@ -101,8 +112,11 @@ def _parse_json_ld(
                 nome = item.get('name', 'Sem título')
                 descricao_full = item.get('description') or ''
                 descricao = descricao_full[:300]
+                # O JSON-LD não traz bairro: `addressLocality` é a cidade e
+                # `streetAddress` é o logradouro. O bairro só existe no slug.
                 addr = item.get('address', {})
-                bairro = addr.get('streetAddress') or addr.get('addressLocality')
+                endereco = addr.get('streetAddress')
+                bairro_item = extrair_bairro_do_slug(url_anuncio, cidade_normalizada)
 
                 nome_emp = extrair_nome_empreendimento(descricao_full)
                 construtora = extrair_construtora(nome, descricao_full)
@@ -116,7 +130,8 @@ def _parse_json_ld(
                     'nome_empreendimento': nome_emp,
                     'construtora': construtora,
                     'cidade': cidade_normalizada,
-                    'bairro': bairro,
+                    'bairro': bairro_item,
+                    'endereco': endereco,
                     'portal': 'vivareal',
                     'preco': float(preco),
                     'area_m2': float(area),

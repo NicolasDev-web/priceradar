@@ -145,13 +145,21 @@ export function ResultCard({ empreendimento: e, precoM2Medio }: Props) {
             </span>
           )}
           {e.bairro && (
-            <span className="text-[10px] text-mrv-text-dim flex items-center gap-0.5">
+            <span className="text-[10px] font-medium text-mrv-text-muted flex items-center gap-0.5">
               <MapPin size={9} />
               {e.bairro}
             </span>
           )}
           <span className="text-[10px] text-mrv-text-dim ml-auto flex-shrink-0">{e.area_m2} m²</span>
         </div>
+
+        {/* Logradouro em linha própria: é dado de rua, não de bairro, e
+            misturar os dois foi o que quebrou o filtro por bairro. */}
+        {e.endereco && (
+          <p className="text-[10px] text-mrv-text-dim -mt-2 mb-3 truncate" title={e.endereco}>
+            {e.endereco}
+          </p>
+        )}
 
         {/* Detalhes: quartos, banheiros, vagas */}
         <div className="flex items-center gap-3.5 text-[11px] text-mrv-text-muted py-2.5 border-t border-b border-mrv-border/50 mb-3">

@@ -10,6 +10,9 @@ class Empreendimento(BaseModel):
     construtora: str | None
     cidade: str
     bairro: str | None
+    # Logradouro. Vem separado do bairro porque o JSON-LD dos portais traz os
+    # dois em campos distintos e misturá-los quebrava o filtro de bairro.
+    endereco: str | None = None
     portal: str
     preco: float
     area_m2: float

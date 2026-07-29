@@ -12,6 +12,7 @@ from scraper.browser import buscar_html_playwright
 from scraper.http import buscar_html
 from scraper.parser import (
     calcular_preco_m2,
+    extrair_bairro_do_slug,
     extrair_construtora,
     extrair_nome_empreendimento,
     normalizar_cidade,
@@ -36,8 +37,9 @@ def build_zapimoveis_url(
     url = f"{ZAP_BASE_URL}/venda/apartamentos/{estado}+{cidade}/?precoMinimo={int(preco_min)}&precoMaximo={int(preco_max)}"
     if quartos:
         url += f"&quartos={quartos}"
-    if bairro:
-        url += f"&bairros={bairro.strip().lower().replace(' ', '-')}"
+    # O Zap ignora bairro tanto na query quanto no path (testado em
+    # 29/07/2026: ambos devolvem 404 ou o resultado sem filtro). O bairro
+    # é aplicado depois, em services/search.py, sobre o campo já corrigido.
     if pagina > 1:
         url += f"&pagina={pagina}"
     return url
@@ -81,8 +83,11 @@ def _parse_json_ld(
                 nome = item.get('name', 'Sem título')
                 descricao_full = item.get('description') or ''
                 descricao = descricao_full[:300]
+                # Mesma limitação do VivaReal: `addressLocality` é a cidade e
+                # `streetAddress` é o logradouro. O bairro só existe no slug.
                 addr = item.get('address', {})
-                bairro = addr.get('streetAddress') or addr.get('addressLocality')
+                endereco = addr.get('streetAddress')
+                bairro_item = extrair_bairro_do_slug(url_anuncio, cidade_normalizada)
 
                 nome_emp = extrair_nome_empreendimento(descricao_full)
                 construtora = extrair_construtora(nome, descricao_full)
@@ -96,7 +101,8 @@ def _parse_json_ld(
                     'nome_empreendimento': nome_emp,
                     'construtora': construtora,
                     'cidade': cidade_normalizada,
-                    'bairro': bairro,
+                    'bairro': bairro_item,
+                    'endereco': endereco,
                     'portal': 'zapimoveis',
                     'preco': float(preco),
                     'area_m2': float(area),

@@ -5,6 +5,7 @@ export interface Empreendimento {
   construtora: string | null
   cidade: string
   bairro: string | null
+  endereco: string | null
   portal: string
   preco: number
   area_m2: number

@@ -35,6 +35,7 @@ class EmpreendimentoDB(Base):
     construtora         = Column(String, nullable=True, index=True)
     cidade              = Column(String, nullable=False, index=True)
     bairro              = Column(String, nullable=True)
+    endereco            = Column(String, nullable=True)
     portal              = Column(String, nullable=False)
     preco               = Column(Float, nullable=False)
     area_m2             = Column(Float, nullable=False)

@@ -37,3 +37,5 @@ async def _migrar_colunas(conn):
     colunas_emp = {row[1] for row in result.fetchall()}
     if "rf_score" not in colunas_emp:
         await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN rf_score FLOAT"))
+    if "endereco" not in colunas_emp:
+        await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN endereco VARCHAR"))
