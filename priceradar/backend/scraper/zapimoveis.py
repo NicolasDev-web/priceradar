@@ -20,7 +20,8 @@ from scraper.parser import (
 logger = logging.getLogger(__name__)
 
 ZAP_BASE_URL = "https://www.zapimoveis.com.br"
-MAX_PAGINAS = int(os.getenv("ZAP_MAX_PAGINAS", "3"))
+# 2 paginas: a 3a raramente traz item novo apos dedup e custa 1 credito.
+MAX_PAGINAS = int(os.getenv("ZAP_MAX_PAGINAS", "2"))
 
 
 def build_zapimoveis_url(

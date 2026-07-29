@@ -20,7 +20,8 @@ from scraper.parser import (
 logger = logging.getLogger(__name__)
 
 VIVAREAL_BASE_URL = os.getenv("VIVAREAL_BASE_URL", "https://www.vivareal.com.br")
-MAX_PAGINAS = int(os.getenv("VIVAREAL_MAX_PAGINAS", "3"))
+# 2 paginas: a 3a raramente traz item novo apos dedup e custa 1 credito.
+MAX_PAGINAS = int(os.getenv("VIVAREAL_MAX_PAGINAS", "2"))
 
 # Mapa de siglas de estado para nome por extenso (formato VivaReal)
 _ESTADO_SLUG = {

@@ -1,30 +1,37 @@
-"""Agente 2 — Deduplicador cross-portal com Random Forest.
+"""Deduplicador cross-portal por chave de bloqueio.
+
+O mesmo imóvel anunciado em portais diferentes tem URLs diferentes, então a
+dedup por URL não o pega. Aqui comparamos os atributos.
 
 Estratégia:
-1. Para cada par de anúncios (A, B), calcula features de similaridade.
-2. Treina RandomForestClassifier auto-supervisionado:
-   - Pares "obviamente iguais" (mesma área, preço, quartos, mesmo bairro) → label 1
-   - Pares "obviamente diferentes" (área ou preço muito distante) → label 0
-3. O RF prediz a probabilidade de cada par ser o mesmo imóvel.
-4. Agrupa os anúncios em clusters; preserva um representante por cluster.
+1. Agrupa os anúncios em blocos por (bairro, faixa de área, faixa de preço).
+   Só pares dentro do mesmo bloco são comparados — dois imóveis que diferem
+   em preço ou área não são o mesmo imóvel, então nem vale calcular.
+2. Dentro do bloco, `_score_determinista` pontua o par [0,1].
+3. Union-Find agrupa os pares acima do limiar; preserva um representante.
 
-Conservadorismo: errar para o lado de MANTER, nunca descartar
-se a confiança de "mesmo imóvel" for < LIMIAR_DEDUP.
+Por que não Random Forest: a versão anterior treinava um classificador cujos
+rótulos eram gerados pela própria heurística que ele deveria substituir
+(label 1 = preço ±3% e área ±5%), então só podia reproduzi-la. Custava duas
+passadas O(n²) com SequenceMatcher — 73s para 163 anúncios — para chegar ao
+mesmo resultado que a heurística direta dá em milissegundos.
+
+Conservadorismo: errar para o lado de MANTER. Nunca descartar se a confiança
+de "mesmo imóvel" for < LIMIAR_DEDUP.
 """
 from __future__ import annotations
 
 import logging
+import os
 import unicodedata
+from collections import defaultdict
 from difflib import SequenceMatcher
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
-LIMIAR_DEDUP = float(__import__("os").getenv("DEDUP_LIMIAR", "0.85"))
-MIN_AMOSTRAS_RF = 20  # mínimo de pares para treinar o RF
+LIMIAR_DEDUP = float(os.getenv("DEDUP_LIMIAR", "0.85"))
+# Similaridade textual mínima de bairro para considerar a mesma localização.
+LIMIAR_BAIRRO = float(os.getenv("DEDUP_LIMIAR_BAIRRO", "0.80"))
 
 
 def _sem_acento(texto: str) -> str:
@@ -74,85 +81,42 @@ def _features_par(a: dict, b: dict) -> list[float]:
 
 
 def _score_determinista(a: dict, b: dict) -> float:
-    """Score heurístico [0,1] de 'mesmo imóvel' sem ML (usado quando RF não tem dados)."""
-    feat = _features_par(a, b)
-    diff_preco_rel, diff_area_rel, quartos_match, bairro_sim, nome_sim, mesmo_portal = feat
+    """
+    Score [0,1] de "é o mesmo imóvel".
 
-    # Critério forte: preço e área muito próximos + mesmo bairro
-    if diff_preco_rel < 0.03 and diff_area_rel < 0.05:
-        base = 0.90
-    elif diff_preco_rel < 0.08 and diff_area_rel < 0.10:
-        base = 0.70
-    elif diff_preco_rel < 0.15 and diff_area_rel < 0.15:
-        base = 0.50
-    else:
-        base = 0.10
+    Preço e área parecidos NÃO bastam: numa busca já filtrada por cidade,
+    tipologia e faixa de preço, dezenas de apartamentos distintos têm ~60m²
+    e ~R$400k. Confiar só nisso fundia 70% dos anúncios (109 → 33 medido).
 
-    # Ajustes por features complementares
-    base += (quartos_match - 0.5) * 0.15
-    base += bairro_sim * 0.10
-    base += nome_sim * 0.05
+    Por isso o bairro é condição necessária: sem concordância de localização,
+    o par não é o mesmo imóvel, por mais que preço e área coincidam.
+    """
+    diff_preco_rel, diff_area_rel, quartos_match, bairro_sim, nome_sim, mesmo_portal = _features_par(a, b)
 
-    # Penaliza pares do mesmo portal (menos provável que o mesmo imóvel esteja duplicado no mesmo portal)
+    # Mesmo portal: o portal já deduplica internamente; anúncios distintos ali
+    # são imóveis distintos.
     if mesmo_portal:
-        base *= 0.5
+        return 0.0
 
-    return min(max(base, 0.0), 1.0)
+    # Tipologia diferente ⇒ imóveis diferentes.
+    if quartos_match == 0.0:
+        return 0.0
 
+    # Bairro é condição necessária. Ausente em um dos lados ⇒ sem evidência
+    # suficiente para fundir (erra para o lado de manter).
+    if bairro_sim < LIMIAR_BAIRRO:
+        return 0.0
 
-def _gerar_pares_treino(listings: list[dict]) -> tuple[list[list[float]], list[int]]:
-    """
-    Gera pares de treino auto-supervisionados:
-    - Label 1 (mesmo imóvel): pares com preço ±3%, área ±5%, mesmo bairro, portais diferentes
-    - Label 0 (imóveis diferentes): pares com preço ou área muito distantes
-    """
-    X, y = [], []
-    n = len(listings)
-    for i in range(n):
-        for j in range(i + 1, n):
-            a, b = listings[i], listings[j]
-            feat = _features_par(a, b)
-            diff_preco_rel, diff_area_rel, quartos_match, bairro_sim, _, mesmo_portal = feat
+    # Preço e área precisam ser compatíveis.
+    if diff_preco_rel > 0.05 or diff_area_rel > 0.08:
+        return 0.0
 
-            if diff_preco_rel < 0.03 and diff_area_rel < 0.05 and quartos_match >= 0.5 and not mesmo_portal:
-                X.append(feat)
-                y.append(1)
-            elif diff_preco_rel > 0.30 or diff_area_rel > 0.30:
-                X.append(feat)
-                y.append(0)
+    # A partir daqui o par é plausível; a confiança vem de quão exata é a
+    # coincidência e de quanto o texto do anúncio corrobora.
+    exatidao = 1.0 - (diff_preco_rel / 0.05) * 0.5 - (diff_area_rel / 0.08) * 0.3
+    score = 0.60 + 0.25 * max(0.0, exatidao) + 0.15 * nome_sim
 
-    return X, y
-
-
-def _treinar_rf(X: list[list[float]], y: list[int]):
-    """Treina RF de pares se houver amostras suficientes de ambas as classes."""
-    try:
-        import numpy as np
-        from sklearn.ensemble import RandomForestClassifier
-    except ImportError:
-        return None
-
-    arr = np.array(X)
-    labels = np.array(y)
-    if (labels == 0).sum() < 3 or (labels == 1).sum() < 3:
-        return None
-
-    rf = RandomForestClassifier(n_estimators=100, random_state=42, class_weight="balanced")
-    rf.fit(arr, labels)
-    logger.info(
-        f"Dedup RF: treinado com {len(y)} pares ({(labels==1).sum()} positivos, {(labels==0).sum()} negativos)"
-    )
-    return rf
-
-
-def _score_rf(rf, a: dict, b: dict) -> float:
-    """Usa RF para predizer probabilidade de 'mesmo imóvel'."""
-    try:
-        import numpy as np
-        feat = np.array([_features_par(a, b)])
-        return float(rf.predict_proba(feat)[0][1])
-    except Exception:
-        return _score_determinista(a, b)
+    return min(max(score, 0.0), 1.0)
 
 
 def deduplicar_cross_portal(listings: list[dict]) -> list[dict]:
@@ -165,13 +129,6 @@ def deduplicar_cross_portal(listings: list[dict]) -> list[dict]:
     """
     if len(listings) <= 1:
         return listings
-
-    # Tenta treinar RF com os pares gerados automaticamente
-    rf = None
-    if len(listings) >= 5:
-        X, y = _gerar_pares_treino(listings)
-        if len(X) >= MIN_AMOSTRAS_RF:
-            rf = _treinar_rf(X, y)
 
     n = len(listings)
     # Union-Find para agrupar duplicatas
@@ -186,28 +143,38 @@ def deduplicar_cross_portal(listings: list[dict]) -> list[dict]:
     def union(x, y):
         pai[find(x)] = find(y)
 
+    # Chave de bloqueio: só pares que caem no mesmo bloco são comparados.
+    # Área em faixas de 5m² e preço em faixas de R$10k; um imóvel entra nos
+    # blocos vizinhos também, para não perder pares na fronteira da faixa.
+    blocos: dict[tuple, list[int]] = defaultdict(list)
+    for idx, item in enumerate(listings):
+        area = float(item.get("area_m2") or 0)
+        preco = float(item.get("preco") or 0)
+        bairro = _sem_acento(str(item.get("bairro") or ""))[:12]
+        for da in (0, 1):
+            for dp in (0, 1):
+                blocos[(bairro, int(area // 5) + da, int(preco // 10_000) + dp)].append(idx)
+
     pares_avaliados = 0
-    for i in range(n):
-        for j in range(i + 1, n):
-            a, b = listings[i], listings[j]
+    ja_comparados: set[tuple[int, int]] = set()
+    for indices in blocos.values():
+        if len(indices) < 2:
+            continue
+        for pos_i, i in enumerate(indices):
+            for j in indices[pos_i + 1:]:
+                par = (i, j) if i < j else (j, i)
+                if par in ja_comparados:
+                    continue
+                ja_comparados.add(par)
 
-            # Não faz dedup dentro do mesmo portal (improvável ser o mesmo imóvel)
-            if a.get("portal") == b.get("portal"):
-                continue
+                pares_avaliados += 1
+                if _score_determinista(listings[i], listings[j]) >= LIMIAR_DEDUP:
+                    union(i, j)
 
-            # Score rápido (evita RF para pares obviamente diferentes)
-            diff_preco = abs((a.get("preco") or 0) - (b.get("preco") or 0))
-            media_p = ((a.get("preco") or 0) + (b.get("preco") or 0)) / 2 or 1
-            if diff_preco / media_p > 0.25:
-                continue
-
-            score = _score_rf(rf, a, b) if rf else _score_determinista(a, b)
-            pares_avaliados += 1
-
-            if score >= LIMIAR_DEDUP:
-                union(i, j)
-
-    logger.info(f"Dedup: {pares_avaliados} pares avaliados, limiar={LIMIAR_DEDUP}")
+    logger.info(
+        f"Dedup: {pares_avaliados} pares avaliados em {len(blocos)} blocos "
+        f"(de {n*(n-1)//2} pares possíveis), limiar={LIMIAR_DEDUP}"
+    )
 
     # Agrupa por cluster
     clusters: dict[int, list[int]] = {}

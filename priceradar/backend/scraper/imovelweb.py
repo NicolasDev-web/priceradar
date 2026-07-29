@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime
 
 from scraper.browser import buscar_html_playwright
+from scraper.http import buscar_html
 from scraper.parser import (
     calcular_preco_m2,
     extrair_construtora,
@@ -23,7 +24,7 @@ from scraper.parser import (
 logger = logging.getLogger(__name__)
 
 IMOVELWEB_BASE = "https://www.imovelweb.com.br"
-MAX_PAGINAS = int(os.getenv("IMOVELWEB_MAX_PAGINAS", "3"))
+MAX_PAGINAS = int(os.getenv("IMOVELWEB_MAX_PAGINAS", "2"))
 
 
 def _sem_acento(texto: str) -> str:
@@ -151,10 +152,17 @@ async def _fetch_pagina_imovelweb(
     cidade_normalizada: str,
 ) -> list[dict]:
     url = _build_url(cidade_slug, estado_slug, preco_min, preco_max, quartos, pagina)
-    html = await buscar_html_playwright(
-        url, f"ImovelWeb p{pagina}",
-        wait_selector="[class*='listing-item'], [class*='property-card']",
-    )
+
+    # ScraperAPI primeiro: o ImovelWeb responde 403 a acesso direto, mas os
+    # dados vêm no HTML inicial — não precisa renderizar JS. Playwright fica
+    # só como fallback, porque custa ~15s por página contra ~4s do proxy.
+    html = await buscar_html(url, f"ImovelWeb p{pagina}")
+    if html is None:
+        logger.info(f"ImovelWeb p{pagina}: ScraperAPI falhou — tentando Playwright")
+        html = await buscar_html_playwright(
+            url, f"ImovelWeb p{pagina}",
+            wait_selector="[class*='listing-item'], [class*='property-card']",
+        )
     if html is None:
         return []
     return _parse_html_cards(html, cidade_normalizada, preco_min, preco_max)

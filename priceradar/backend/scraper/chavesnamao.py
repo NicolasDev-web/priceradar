@@ -1,11 +1,20 @@
-"""Agente 4 — ChavesNaMão (scraping direto, sem proxy, sem Playwright).
+"""ChavesNaMão — scraping direto, sem proxy pago e sem Playwright.
 
-Estratégia: httpx simples com headers de browser.
-Os listings são renderizados server-side. A URL de cada imóvel encoda
-área, preço e quartos no slug — parse via regex, sem precisar de JS.
-URL pattern: /imovel/apartamento-a-venda-N-quartos-...-Xm2-RSY/id-Z/
+Estratégia: httpx com headers de browser + leitura do JSON-LD embutido.
+O bloco `RealEstateListing` traz `offers.itemListElement` com 15 anúncios
+por página, cada um com preço, área (`floorSize`), quartos, banheiros,
+bairro (`addressLocality`) e a imobiliária anunciante.
+
+Por que não parsear o slug da URL (abordagem anterior): boa parte dos
+anúncios de apartamento não tem o segmento `-NNNm2` na URL, então a área
+saía nula e o anúncio era descartado — era a causa dos ~2 resultados por
+busca. O JSON-LD tem a área de todos.
+
+Os parâmetros de filtro da URL (preço, tipo) são ignorados pelo site, então
+a filtragem é feita aqui e reforçada depois por services/validacao.py.
 """
 import asyncio
+import json
 import logging
 import os
 import re
@@ -14,13 +23,16 @@ import uuid
 from datetime import datetime
 
 import httpx
+from bs4 import BeautifulSoup
 
 from scraper.parser import calcular_preco_m2, extrair_construtora, normalizar_cidade
 
 logger = logging.getLogger(__name__)
 
 CHAVESNAMAO_BASE = "https://www.chavesnamao.com.br"
-MAX_PAGINAS = int(os.getenv("CHAVESNAMAO_MAX_PAGINAS", "5"))
+# Só ~30% de cada página cai na faixa de preço pedida (o site não filtra
+# preço), então compensa varrer mais páginas — são gratuitas e paralelas.
+MAX_PAGINAS = int(os.getenv("CHAVESNAMAO_MAX_PAGINAS", "12"))
 
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -43,63 +55,107 @@ def _sem_acento(texto: str) -> str:
 
 
 def _build_url(cidade: str, estado: str, preco_min: float, preco_max: float, quartos: int | None, pagina: int = 1) -> str:
+    """
+    Monta a URL de busca.
+
+    O tipo de imóvel e o nº de quartos são filtrados pelo PATH — na query
+    string o site os ignora e devolve casas, terrenos e prédios junto.
+    Faixa de preço não tem filtro server-side em nenhum formato conhecido;
+    é aplicada no parsing.
+    """
     cidade_slug = _sem_acento(cidade).lower().replace(" ", "-")
     estado_cidade = _ESTADO_URL.get(estado.lower(), f"{estado.lower()}-{cidade_slug}")
-    url = f"{CHAVESNAMAO_BASE}/imoveis-a-venda/{estado_cidade}/?tipo=apartamento&precoMinimo={int(preco_min)}&precoMaximo={int(preco_max)}"
+    url = f"{CHAVESNAMAO_BASE}/apartamentos-a-venda/{estado_cidade}/"
     if quartos:
-        url += f"&quartos={quartos}"
+        url += f"{int(quartos)}-quartos/"
     if pagina > 1:
-        url += f"&pagina={pagina}"
+        # O parâmetro é `pg`. Com `pagina` o site devolve sempre a página 1
+        # silenciosamente — era por isso que a paginação não surtia efeito.
+        url += f"?pg={pagina}"
     return url
 
 
-def _parse_url_imovel(href: str) -> dict:
-    """Extrai dados do slug da URL: área, preço, quartos, bairro, cidade."""
-    dados: dict = {}
-
-    # Área: -NNNm2-
-    m = re.search(r"-(\d+)m2", href)
-    if m:
-        dados["area_m2"] = float(m.group(1))
-
-    # Preço: -RSNNN/
-    m = re.search(r"-RS(\d+)/", href)
-    if m:
-        dados["preco"] = float(m.group(1))
-
-    # Quartos: -N-quarto
-    m = re.search(r"-(\d+)-quartos?", href)
-    if m:
-        dados["quartos"] = int(m.group(1))
-
-    # Slug geral: /imovel/TIPO-a-venda-...-sp-CIDADE-BAIRRO-Xm2-RSY/id-Z/
-    # Tenta extrair bairro (segmento antes do m2)
-    partes = href.split("/")
-    slug = partes[2] if len(partes) > 2 else ""
-    # Remove sufixos conhecidos e extrai bairro
-    slug_clean = re.sub(r"-\d+m2.*", "", slug)
-    slug_clean = re.sub(r"-RS\d+.*", "", slug_clean)
-    segmentos = slug_clean.split("-")
-    # Bairro costuma ser os últimos 2-3 segmentos antes do estado/cidade
-    if len(segmentos) >= 4:
-        dados["bairro"] = " ".join(s.capitalize() for s in segmentos[-2:])
-
-    # ID do anúncio
-    m = re.search(r"/id-(\d+)/", href)
-    if m:
-        dados["id_anuncio"] = m.group(1)
-
-    return dados
+# Tipos de imóvel do schema.org que contam como apartamento para precificação.
+_TIPOS_ACEITOS = {"Apartment", "Residence", "Accommodation"}
 
 
-def _parse_nome(href: str) -> str:
-    partes = href.split("/")
-    slug = partes[2] if len(partes) > 2 else ""
-    slug = re.sub(r"-\d+m2.*", "", slug)
-    slug = re.sub(r"-RS\d+.*", "", slug)
-    slug = re.sub(r"-sp-.*", "", slug)
-    slug = re.sub(r"-[a-z]{2}-", " ", slug)
-    return slug.replace("-", " ").title()
+def _extrair_ofertas_jsonld(html: str) -> list[dict]:
+    """Devolve os itens de `offers.itemListElement` do bloco RealEstateListing."""
+    soup = BeautifulSoup(html, "lxml")
+    for tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            dados = json.loads(tag.string or "{}")
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(dados, dict) or dados.get("@type") != "RealEstateListing":
+            continue
+        ofertas = dados.get("offers")
+        if isinstance(ofertas, dict):
+            return ofertas.get("itemListElement", []) or []
+    return []
+
+
+def _area_de_floorsize(item: dict) -> float | None:
+    """floorSize vem como {'unitText': '63m²'} — extrai o número."""
+    floor = item.get("floorSize") or {}
+    texto = str(floor.get("unitText") or floor.get("value") or "")
+    m = re.search(r"(\d+(?:[.,]\d+)?)", texto)
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _int_ou_none(valor) -> int | None:
+    try:
+        return int(valor) if valor is not None and str(valor).strip() != "" else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_oferta(oferta: dict, cidade_normalizada: str) -> dict | None:
+    """Converte um Offer do JSON-LD no dict padrão do pipeline."""
+    item = oferta.get("itemOffered") or {}
+    if item.get("@type") not in _TIPOS_ACEITOS:
+        return None
+
+    try:
+        preco = float(oferta.get("price") or 0)
+    except (TypeError, ValueError):
+        return None
+    area = _area_de_floorsize(item)
+    if not preco or not area or area <= 0:
+        return None
+
+    endereco = item.get("address") or {}
+    titulo = str(oferta.get("name") or "").strip()
+    url = str(oferta.get("url") or "")
+    anunciante = (oferta.get("offeredBy") or {}).get("name")
+
+    return {
+        "id": str(uuid.uuid4()),
+        "nome_anuncio": titulo,
+        # O nome real do empreendimento é extraído do título pelo parser
+        # compartilhado; não repetir o título aqui evita nome genérico.
+        "nome_empreendimento": None,
+        "construtora": extrair_construtora(titulo, anunciante),
+        "cidade": cidade_normalizada,
+        "bairro": endereco.get("addressLocality"),
+        "portal": "chavesnamao",
+        "preco": preco,
+        "area_m2": area,
+        "preco_m2": calcular_preco_m2(preco, area),
+        # O JSON-LD ora traz número, ora string ("3") — normalizar para int
+        # evita comparação str×int lá na frente no pipeline.
+        "quartos": _int_ou_none(item.get("numberOfBedrooms") or item.get("numberOfRooms")),
+        "banheiros": _int_ou_none(item.get("numberOfBathroomsTotal")),
+        "vagas": None,
+        "descricao": titulo[:300],
+        "url_anuncio": url,
+        "data_coleta": datetime.now(),
+    }
 
 
 async def _fetch_pagina(
@@ -121,58 +177,30 @@ async def _fetch_pagina(
             return []
 
         html = resp.content.decode("utf-8", errors="replace")
-
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html, "lxml")
-        links = soup.select("a[href*='/imovel/']")
+        ofertas = _extrair_ofertas_jsonld(html)
 
         resultados = []
-        for link in links:
-            href = link.get("href", "")
-            if not href or "tipo=apartamento" in href or "/imoveis-" in href:
+        for oferta in ofertas:
+            item = _parse_oferta(oferta, cidade_normalizada)
+            if item is None:
                 continue
 
-            dados = _parse_url_imovel(href)
-            preco = dados.get("preco")
-            area = dados.get("area_m2")
-            id_anuncio = dados.get("id_anuncio", "")
-
-            if not preco or not area:
+            # O site ignora os filtros da URL — aplicamos aqui.
+            if not (preco_min <= item["preco"] <= preco_max):
                 continue
-            if not (preco_min <= preco <= preco_max):
-                continue
-            if area <= 0:
-                continue
-            if id_anuncio and id_anuncio in vistos_global:
-                continue
-            if id_anuncio:
-                vistos_global.add(id_anuncio)
-
-            if not re.search(r"apartamento|studio|flat|loft|cobertura", href, re.I):
+            if quartos and item.get("quartos") and int(item["quartos"]) != int(quartos):
                 continue
 
-            titulo = _parse_nome(href)
-            bairro_extraido = dados.get("bairro")
+            # Dedup por ID do anúncio, compartilhado entre as páginas
+            m = re.search(r"/id-(\d+)/", item["url_anuncio"])
+            id_anuncio = m.group(1) if m else item["url_anuncio"]
+            if id_anuncio in vistos_global:
+                continue
+            vistos_global.add(id_anuncio)
 
-            resultados.append({
-                "id": str(uuid.uuid4()),
-                "nome_anuncio": titulo,
-                "nome_empreendimento": titulo,
-                "construtora": extrair_construtora(titulo, None),
-                "cidade": cidade_normalizada,
-                "bairro": bairro_extraido,
-                "portal": "chavesnamao",
-                "preco": preco,
-                "area_m2": area,
-                "preco_m2": calcular_preco_m2(preco, area),
-                "quartos": dados.get("quartos"),
-                "banheiros": None,
-                "vagas": None,
-                "descricao": titulo[:300],
-                "url_anuncio": CHAVESNAMAO_BASE + href,
-                "data_coleta": datetime.now(),
-            })
+            resultados.append(item)
 
+        logger.info(f"ChavesNaMão p{pagina}: {len(ofertas)} ofertas → {len(resultados)} válidas")
         return resultados
 
     except Exception as e:

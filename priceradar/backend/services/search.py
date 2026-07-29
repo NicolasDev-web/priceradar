@@ -9,7 +9,6 @@ import uuid
 from datetime import datetime
 
 from models import BuscaRequest, BuscaResponse, DiagnosticoColeta, Empreendimento
-from scraper.ciento23imoveis import scrape_123imoveis
 from scraper.chavesnamao import scrape_chavesnamao
 from scraper.imovelweb import scrape_imovelweb
 from scraper.mercadolivre import scrape_mercadolivre
@@ -26,13 +25,20 @@ from services.validacao import filtrar_anuncios
 logger = logging.getLogger(__name__)
 
 MOCK_MODE = os.getenv("MOCK", "false").lower() == "true"
-OLX_HABILITADO = os.getenv("HABILITAR_OLX", "true").lower() == "true"
-MERCADOLIVRE_HABILITADO = os.getenv("HABILITAR_MERCADOLIVRE", "true").lower() == "true"
+
+# Fontes desligadas por padrão, com o motivo medido em 29/07/2026:
+#   olx          — bloqueia requisição de servidor (403)
+#   mercadolivre — a página só renderiza com JS e o Playwright devolve 0
+#   quintoandar  — listagem 100% client-side, sem dados no HTML inicial
+#   netimoveis   — portal concentrado em MG; sem inventário fora de lá
+# Ligar exige medir antes com a skill `diagnosticar-scraper`.
+OLX_HABILITADO = os.getenv("HABILITAR_OLX", "false").lower() == "true"
+MERCADOLIVRE_HABILITADO = os.getenv("HABILITAR_MERCADOLIVRE", "false").lower() == "true"
+QUINTOANDAR_HABILITADO = os.getenv("HABILITAR_QUINTOANDAR", "false").lower() == "true"
+NETIMOVEIS_HABILITADO = os.getenv("HABILITAR_NETIMOVEIS", "false").lower() == "true"
+
 IMOVELWEB_HABILITADO = os.getenv("HABILITAR_IMOVELWEB", "true").lower() == "true"
 CHAVESNAMAO_HABILITADO = os.getenv("HABILITAR_CHAVESNAMAO", "true").lower() == "true"
-QUINTOANDAR_HABILITADO = os.getenv("HABILITAR_QUINTOANDAR", "true").lower() == "true"
-NETIMOVEIS_HABILITADO = os.getenv("HABILITAR_NETIMOVEIS", "true").lower() == "true"
-CIENTO23_HABILITADO = os.getenv("HABILITAR_123IMOVEIS", "true").lower() == "true"
 RF_REFINER_HABILITADO = os.getenv("HABILITAR_RF_REFINER", "true").lower() == "true"
 DEDUP_CROSS_PORTAL_HABILITADO = os.getenv("HABILITAR_DEDUP_CROSS_PORTAL", "true").lower() == "true"
 
@@ -136,10 +142,6 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
         if OLX_HABILITADO:
             tarefas_candidatas.append(
                 ("olx", scrape_olximoveis(cidade, estado, request.preco_min, request.preco_max, request.quartos))
-            )
-        if CIENTO23_HABILITADO:
-            tarefas_candidatas.append(
-                ("123imoveis", scrape_123imoveis(request.cidade, request.preco_min, request.preco_max, request.quartos, bairro))
             )
 
         # Reordena as tarefas por prioridade histórica (RF) antes de disparar
