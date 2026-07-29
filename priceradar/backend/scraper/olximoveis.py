@@ -1,11 +1,23 @@
+"""OLX — acesso destravado, parser desatualizado.
+
+Estado em 29/07/2026: com a camada de acesso escalonada (curl-cffi), o OLX
+voltou a responder HTTP 200 — não está mais bloqueado. Porém os seletores
+CSS abaixo (`li[data-lurker-detail=ad_list]`, `section[data-testid=ad-card]`)
+não existem mais no HTML atual: a listagem passou a ser servida via React
+Server Components (`self.__next_f`), sem JSON-LD de ItemList.
+
+Para reativar é preciso reescrever `parse_olx_html` lendo o payload RSC.
+Prioridade baixa: o OLX concentra revenda por pessoa física, enquanto o
+PriceRadar compara lançamentos de construtora.
+"""
 import logging
 import re
 import uuid
 from datetime import datetime
 
-import httpx
 from bs4 import BeautifulSoup
 
+from scraper.http import buscar_html
 from scraper.parser import (
     calcular_preco_m2,
     extrair_construtora,
@@ -151,14 +163,15 @@ async def scrape_olximoveis(
     logger.info(f"Scraping OLX: {url}")
 
     try:
-        async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=30) as client:
-            resp = await client.get(url)
+        # O OLX bloqueia httpx pela assinatura TLS. Com a camada de acesso
+        # escalonada (curl-cffi imitando Chrome) ele voltou a responder 200.
+        html = await buscar_html(url, "OLX")
 
-        if resp.status_code != 200 or len(resp.text) < 1000:
-            logger.warning(f"OLX retornou status {resp.status_code} ou resposta muito curta — possível bloqueio")
+        if not html or len(html) < 1000:
+            logger.warning("OLX: resposta vazia ou muito curta — possível bloqueio")
             return []
 
-        return parse_olx_html(resp.text, cidade_normalizada)
+        return parse_olx_html(html, cidade_normalizada)
 
     except Exception as e:
         logger.error(f"Erro no scraping OLX: {e}")
