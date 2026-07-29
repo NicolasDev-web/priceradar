@@ -22,7 +22,9 @@ function calcularDelta(precoMRV: number, media: number): { pct: number; texto: s
 export function KpiBar({ dados, onEditarMRV }: Props) {
   const empMin = dados.empreendimentos.find(e => e.preco_m2 === dados.preco_m2_min)
   const empMax = dados.empreendimentos.find(e => e.preco_m2 === dados.preco_m2_max)
-  const delta = dados.preco_m2_mrv ? calcularDelta(dados.preco_m2_mrv, dados.preco_m2_medio) : null
+  // Buscas antigas do cache não têm mediana gravada — cai para a média.
+  const precoReferencia = dados.preco_m2_mediana || dados.preco_m2_medio
+  const delta = dados.preco_m2_mrv ? calcularDelta(dados.preco_m2_mrv, precoReferencia) : null
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
@@ -45,19 +47,21 @@ export function KpiBar({ dados, onEditarMRV }: Props) {
         </p>
       </div>
 
-      {/* Preço/m² Médio */}
+      {/* Preço/m² mediano — número de referência.
+          Mediana e não média: um único anúncio com área agregada ou erro de
+          parsing desloca a média, mas não a mediana. */}
       <div className="bg-mrv-surface border border-mrv-border rounded-card shadow-kpi p-5 flex flex-col justify-between">
         <div>
           <p className="text-[10px] font-semibold text-mrv-text-dim uppercase tracking-[0.12em] mb-3">
-            Preço/m² médio
+            Preço/m² mediano
           </p>
           <p className="font-data font-bold text-mrv-text leading-none text-[1.65rem]" style={{ letterSpacing: '-0.02em' }}>
-            {formatarMoeda(dados.preco_m2_medio)}
+            {formatarMoeda(precoReferencia)}
           </p>
         </div>
         <p className="text-[10px] text-mrv-text-muted mt-3 flex items-center gap-1">
           <Minus size={10} className="text-mrv-text-dim" />
-          referência de mercado
+          média {formatarMoeda(dados.preco_m2_medio)}
         </p>
       </div>
 
@@ -136,7 +140,7 @@ export function KpiBar({ dados, onEditarMRV }: Props) {
               ? <TrendingDown size={10} />
               : <TrendingUp size={10} />
             }
-            <span>{delta.texto} vs. média</span>
+            <span>{delta.texto} vs. mediana</span>
           </div>
         )}
         {dados.preco_m2_mrv && !delta && (

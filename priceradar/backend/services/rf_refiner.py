@@ -8,7 +8,7 @@ Pipeline:
    inválido produzido pelo scraper.
 2. Imputação: RandomForestRegressor preenche campos faltantes (área, quartos, vagas,
    banheiros) em vez de descartar o anúncio. Campos imputados ficam marcados em
-   '_campos_imputados' e causam penalidade leve no rf_score (Agente 1).
+   'campos_imputados' e causam penalidade leve no rf_score (Agente 1).
 3. IsolationForest detecta anomalias de forma conservadora (contamination baixa,
    mínimo de 10 amostras antes de qualquer filtragem).
 4. RandomForestRegressor prediz preco_m2 esperado para score de qualidade.
@@ -45,9 +45,12 @@ _DESVIO_THRESHOLD = float(os.getenv("RF_DESVIO_THRESHOLD", "3.5"))
 _MIN_AMOSTRAS_FILTRO = 10   # abaixo disso, não filtra nenhum anúncio
 _MIN_AMOSTRAS_RF = 8        # mínimo para treinar o regressor de imputação
 
-# Agente 2 — Blindagem de outliers de preço relativo
-# 40% da mediana do grupo; ajustável via env var
-_RATIO_MINIMO_PRECO_GRUPO = float(os.getenv("RF_RATIO_MINIMO_PRECO", "0.40"))
+# Blindagem de outliers por preço relativo ao grupo (cidade + quartos).
+# Banda BILATERAL: preço de entrada/parcela contamina por baixo, e anúncio
+# com área agregada ou erro de parsing contamina por cima. Antes só havia
+# corte inferior, e era por isso que passavam anúncios de 18.000–26.000/m².
+_RATIO_MINIMO_PRECO_GRUPO = float(os.getenv("RF_RATIO_MINIMO_PRECO", "0.50"))
+_RATIO_MAXIMO_PRECO_GRUPO = float(os.getenv("RF_RATIO_MAXIMO_PRECO", "1.80"))
 _MIN_AMOSTRAS_GRUPO = 3     # mínimo de itens no grupo para aplicar o filtro relativo
 
 # Regex: nome_anuncio que é só um valor monetário → sinal de dado inválido do scraper
@@ -61,10 +64,12 @@ _RE_PRECO_TITULO = re.compile(
 
 def _filtrar_preco_entrada(listings: list[dict]) -> tuple[list[dict], int]:
     """
-    Remove anúncios cujo preco_m2 é claramente de preço de entrada/parcela,
-    não valor total por m². Dois critérios independentes:
+    Remove anúncios cujo preco_m2 está fora da banda plausível do grupo.
+    Dois critérios independentes:
 
-    1. preco_m2 < RATIO × mediana(grupo) — onde grupo = cidade + quartos.
+    1. preco_m2 fora de [RATIO_MIN, RATIO_MAX] × mediana(grupo), onde
+       grupo = cidade + quartos. O corte inferior pega preço de entrada/
+       parcela; o superior pega área agregada e erro de parsing.
     2. nome_anuncio parece ser um preço monetário (ex.: "R$ 440.000").
 
     Retorna (lista filtrada, qtd removida).
@@ -98,14 +103,23 @@ def _filtrar_preco_entrada(listings: list[dict]) -> tuple[list[dict], int]:
             continue
 
         mediana_grupo = float(np.median(validos))
-        limiar = mediana_grupo * _RATIO_MINIMO_PRECO_GRUPO
+        limiar_inf = mediana_grupo * _RATIO_MINIMO_PRECO_GRUPO
+        limiar_sup = mediana_grupo * _RATIO_MAXIMO_PRECO_GRUPO
 
         for i, preco in zip(indices, precos):
-            if preco > 0 and preco < limiar:
+            if preco <= 0:
+                continue
+            if preco < limiar_inf:
                 remover.add(i)
                 logger.debug(
-                    f"Outlier preço-relativo: idx={i} preco_m2={preco:.0f} "
+                    f"Outlier preço-relativo (baixo): idx={i} preco_m2={preco:.0f} "
                     f"< {_RATIO_MINIMO_PRECO_GRUPO:.0%} × mediana={mediana_grupo:.0f}"
+                )
+            elif preco > limiar_sup:
+                remover.add(i)
+                logger.debug(
+                    f"Outlier preço-relativo (alto): idx={i} preco_m2={preco:.0f} "
+                    f"> {_RATIO_MAXIMO_PRECO_GRUPO:.0%} × mediana={mediana_grupo:.0f}"
                 )
 
     filtrados = [l for i, l in enumerate(listings) if i not in remover]
@@ -136,7 +150,7 @@ def _imputar_campos(listings: list[dict]) -> list[dict]:
     """
     Usa RandomForestRegressor para imputar campos faltantes.
     Nunca remove anúncios — apenas preenche os buracos.
-    Campos imputados ficam registrados em '_campos_imputados'.
+    Campos imputados ficam registrados em 'campos_imputados'.
     """
     try:
         from sklearn.ensemble import RandomForestRegressor
@@ -167,7 +181,7 @@ def _imputar_campos(listings: list[dict]) -> list[dict]:
             listing["area_m2"] = round(float(area_pred), 1)
             preco = float(listing.get("preco") or 0)
             listing["preco_m2"] = round(preco / area_pred, 2) if area_pred > 0 else listing.get("preco_m2", 0)
-            listing.setdefault("_campos_imputados", []).append("area_m2")
+            listing.setdefault("campos_imputados", []).append("area_m2")
             logger.debug(f"Imputação área: {listing.get('nome_anuncio')} → {listing['area_m2']}m²")
 
     # ── quartos ─────────────────────────────────────────────────────────────
@@ -191,7 +205,7 @@ def _imputar_campos(listings: list[dict]) -> list[dict]:
         )
         for listing, qts_pred in zip(sem_qts, rf_qts.predict(np.array([_feat_qts(l) for l in sem_qts]))):
             listing["quartos"] = max(1, round(float(qts_pred)))
-            listing.setdefault("_campos_imputados", []).append("quartos")
+            listing.setdefault("campos_imputados", []).append("quartos")
             logger.debug(f"Imputação quartos: {listing.get('nome_anuncio')} → {listing['quartos']}qts")
 
     # ── vagas ───────────────────────────────────────────────────────────────
@@ -216,14 +230,14 @@ def _imputar_campos(listings: list[dict]) -> list[dict]:
             )
             for listing, vagas_pred in zip(sem_vagas, rf_vagas.predict(np.array([_feat_vagas(l) for l in sem_vagas]))):
                 listing["vagas"] = max(0, round(float(vagas_pred)))
-                listing.setdefault("_campos_imputados", []).append("vagas")
+                listing.setdefault("campos_imputados", []).append("vagas")
                 logger.debug(f"Imputação vagas: {listing.get('nome_anuncio')} → {listing['vagas']} vagas")
         else:
             # Fallback: mediana simples
             mediana = int(round(float(np.median([float(l["vagas"]) for l in com_vagas])))) if com_vagas else 1
             for listing in sem_vagas:
                 listing["vagas"] = mediana
-                listing.setdefault("_campos_imputados", []).append("vagas")
+                listing.setdefault("campos_imputados", []).append("vagas")
 
     # ── banheiros ───────────────────────────────────────────────────────────
     com_banh = [l for l in listings if l.get("banheiros") is not None]
@@ -247,13 +261,13 @@ def _imputar_campos(listings: list[dict]) -> list[dict]:
             )
             for listing, banh_pred in zip(sem_banh, rf_banh.predict(np.array([_feat_banh(l) for l in sem_banh]))):
                 listing["banheiros"] = max(1, round(float(banh_pred)))
-                listing.setdefault("_campos_imputados", []).append("banheiros")
+                listing.setdefault("campos_imputados", []).append("banheiros")
                 logger.debug(f"Imputação banheiros: {listing.get('nome_anuncio')} → {listing['banheiros']} banh")
         else:
             # Fallback: quartos - 1, mínimo 1
             for listing in sem_banh:
                 listing["banheiros"] = max(1, int(listing.get("quartos") or 2) - 1)
-                listing.setdefault("_campos_imputados", []).append("banheiros")
+                listing.setdefault("campos_imputados", []).append("banheiros")
 
     return listings
 
@@ -370,7 +384,7 @@ def refinar_com_random_forest(
 
 def _aplicar_penalidade_imputacao(listing: dict) -> None:
     """Penaliza levemente o rf_score por campos imputados (5% por campo, máximo 20%)."""
-    campos = listing.get("_campos_imputados", [])
+    campos = listing.get("campos_imputados", [])
     if not campos:
         return
     penalidade = min(0.20, 0.05 * len(campos))

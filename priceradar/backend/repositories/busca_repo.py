@@ -1,3 +1,4 @@
+import statistics
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -17,6 +18,7 @@ async def salvar_busca(db: AsyncSession, busca: BuscaRequest, resultado: BuscaRe
         bairro=getattr(busca, 'bairro', None),
         total_encontrado=resultado.total,
         preco_m2_medio=resultado.preco_m2_medio,
+        preco_m2_mediana=resultado.preco_m2_mediana,
     )
     db.add(nova)
     await db.flush()
@@ -40,6 +42,7 @@ async def salvar_busca(db: AsyncSession, busca: BuscaRequest, resultado: BuscaRe
             descricao=emp.descricao,
             url_anuncio=emp.url_anuncio,
             data_coleta=emp.data_coleta,
+            rf_score=emp.rf_score,
         ))
 
     await db.commit()
@@ -106,6 +109,7 @@ async def buscar_cache_recente(
             descricao=e.descricao,
             url_anuncio=e.url_anuncio,
             data_coleta=e.data_coleta,
+            rf_score=e.rf_score,
         ))
 
     empreendimentos.sort(key=lambda x: x.preco_m2)
@@ -113,6 +117,9 @@ async def buscar_cache_recente(
     return BuscaResponse(
         total=len(empreendimentos),
         preco_m2_medio=round(sum(precos_m2) / len(precos_m2), 2) if precos_m2 else 0.0,
+        # Recalcula a mediana a partir dos itens: buscas gravadas antes desta
+        # coluna existir têm preco_m2_mediana nulo no banco.
+        preco_m2_mediana=round(statistics.median(precos_m2), 2) if precos_m2 else 0.0,
         preco_m2_min=min(precos_m2) if precos_m2 else 0.0,
         preco_m2_max=max(precos_m2) if precos_m2 else 0.0,
         preco_m2_mrv=preco_m2_mrv,

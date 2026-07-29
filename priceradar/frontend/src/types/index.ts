@@ -18,6 +18,16 @@ export interface Empreendimento {
   url_anuncio: string
   data_coleta: string
   rf_score?: number
+  campos_imputados?: string[]
+  portais_duplicados?: string[]
+}
+
+export interface DiagnosticoColeta {
+  total_bruto: number
+  fontes_ok: string[]
+  fontes_zero: string[]
+  fontes_erro: string[]
+  descartados_por_motivo: Record<string, number>
 }
 
 export interface BuscaRequest {
@@ -31,12 +41,14 @@ export interface BuscaRequest {
 export interface BuscaResponse {
   total: number
   preco_m2_medio: number
+  preco_m2_mediana: number
   preco_m2_min: number
   preco_m2_max: number
   preco_m2_mrv: number | null
   empreendimentos: Empreendimento[]
   tempo_coleta_segundos: number
   do_cache: boolean
+  diagnostico?: DiagnosticoColeta | null
 }
 
 export interface BuscaSalva {

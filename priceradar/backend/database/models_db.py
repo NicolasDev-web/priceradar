@@ -18,6 +18,7 @@ class BuscaSalva(Base):
     bairro           = Column(String, nullable=True)
     total_encontrado = Column(Integer, default=0)
     preco_m2_medio   = Column(Float, nullable=True)
+    preco_m2_mediana = Column(Float, nullable=True)
     criado_em        = Column(DateTime, default=datetime.utcnow)
     usuario          = Column(String, nullable=True)
 
@@ -45,6 +46,7 @@ class EmpreendimentoDB(Base):
     descricao           = Column(Text, nullable=True)
     url_anuncio         = Column(String, nullable=False)
     data_coleta         = Column(DateTime, default=datetime.utcnow)
+    rf_score            = Column(Float, nullable=True)
 
     busca = relationship("BuscaSalva", back_populates="empreendimentos")
 

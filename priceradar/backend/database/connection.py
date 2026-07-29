@@ -30,3 +30,10 @@ async def _migrar_colunas(conn):
     colunas = {row[1] for row in result.fetchall()}
     if "bairro" not in colunas:
         await conn.execute(text("ALTER TABLE buscas ADD COLUMN bairro VARCHAR"))
+    if "preco_m2_mediana" not in colunas:
+        await conn.execute(text("ALTER TABLE buscas ADD COLUMN preco_m2_mediana FLOAT"))
+
+    result = await conn.execute(text("PRAGMA table_info(empreendimentos)"))
+    colunas_emp = {row[1] for row in result.fetchall()}
+    if "rf_score" not in colunas_emp:
+        await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN rf_score FLOAT"))

@@ -2,12 +2,13 @@ import asyncio
 import logging
 import os
 import random
+import statistics
 import time
 import unicodedata
 import uuid
 from datetime import datetime
 
-from models import BuscaRequest, BuscaResponse, Empreendimento
+from models import BuscaRequest, BuscaResponse, DiagnosticoColeta, Empreendimento
 from scraper.ciento23imoveis import scrape_123imoveis
 from scraper.chavesnamao import scrape_chavesnamao
 from scraper.imovelweb import scrape_imovelweb
@@ -20,6 +21,7 @@ from scraper.zapimoveis import scrape_zapimoveis
 from services.deduplicador import deduplicar_cross_portal
 from services.historico_fontes import ordenar_fontes_por_prioridade, registrar_resultado
 from services.rf_refiner import refinar_com_random_forest
+from services.validacao import filtrar_anuncios
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +69,12 @@ def _gerar_mock_data(request: BuscaRequest) -> list[dict]:
     resultado = []
     for i in range(12):
         quartos = request.quartos or random.choice([1, 2, 3])
-        # Gera preco_m2 diretamente em range realista para não disparar o filtro de outliers
+        # Gera o preço DENTRO da faixa pedida e deriva a área, para que os dados
+        # fictícios passem pela validação de fronteira como um anúncio real passaria.
+        preco = round(random.uniform(request.preco_min, request.preco_max), 2)
         preco_m2 = random.uniform(4500, 9000)
-        area = round(random.uniform(50, 100), 2)
-        preco = round(preco_m2 * area, 2)
+        area = round(max(20.0, preco / preco_m2), 2)
+        preco_m2 = preco / area
         resultado.append({
             'id': str(uuid.uuid4()),
             'nome_anuncio': nomes[i % len(nomes)],
@@ -94,6 +98,8 @@ def _gerar_mock_data(request: BuscaRequest) -> list[dict]:
 
 async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = None) -> BuscaResponse:
     inicio = time.time()
+    contagem_por_portal: dict[str, int] = {}
+    fontes_erro: list[str] = []
 
     if MOCK_MODE:
         logger.info("Modo MOCK ativo")
@@ -145,11 +151,11 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
         resultados = await asyncio.gather(*(t[1] for t in tarefas), return_exceptions=True)
 
         raw_todos = []
-        contagem_por_portal: dict[str, int] = {}
         for (portal, _), resultado in zip(tarefas, resultados):
             if isinstance(resultado, Exception):
                 logger.warning(f"Scraper {portal} falhou: {resultado}")
                 contagem_por_portal[portal] = 0
+                fontes_erro.append(portal)
                 continue
             n = len(resultado)
             contagem_por_portal[portal] = n
@@ -163,6 +169,12 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
                 logger.debug(f"Histórico fontes: erro ao registrar {portal}: {e}")
 
         logger.info(f"Total bruto: {len(raw_todos)} | Por portal: {contagem_por_portal}")
+
+    total_bruto = len(raw_todos)
+
+    # Validação na fronteira: descarta locação, faixa de área, tipologia
+    # divergente e valores implausíveis ANTES que contaminem o KPI.
+    raw_todos, descartes = filtrar_anuncios(raw_todos, request)
 
     # Filtro por bairro
     bairro_filtro = getattr(request, 'bairro', None)
@@ -212,19 +224,31 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
     empreendimentos.sort(key=lambda e: e.preco_m2)
     tempo = round(time.time() - inicio, 2)
 
+    diagnostico = DiagnosticoColeta(
+        total_bruto=total_bruto,
+        fontes_ok=sorted(p for p, n in contagem_por_portal.items() if n > 0),
+        fontes_zero=sorted(p for p, n in contagem_por_portal.items() if n == 0 and p not in fontes_erro),
+        fontes_erro=sorted(fontes_erro),
+        descartados_por_motivo=descartes,
+    )
+
     if not empreendimentos:
         return BuscaResponse(
-            total=0, preco_m2_medio=0.0, preco_m2_min=0.0, preco_m2_max=0.0,
+            total=0, preco_m2_medio=0.0, preco_m2_mediana=0.0,
+            preco_m2_min=0.0, preco_m2_max=0.0,
             preco_m2_mrv=preco_m2_mrv, empreendimentos=[], tempo_coleta_segundos=tempo,
+            diagnostico=diagnostico,
         )
 
-    precos_m2 = [e.preco_m2 for e in empreendimentos]
+    precos_m2 = sorted(e.preco_m2 for e in empreendimentos)
     return BuscaResponse(
         total=len(empreendimentos),
         preco_m2_medio=round(sum(precos_m2) / len(precos_m2), 2),
-        preco_m2_min=min(precos_m2),
-        preco_m2_max=max(precos_m2),
+        preco_m2_mediana=round(statistics.median(precos_m2), 2),
+        preco_m2_min=precos_m2[0],
+        preco_m2_max=precos_m2[-1],
         preco_m2_mrv=preco_m2_mrv,
         empreendimentos=empreendimentos,
         tempo_coleta_segundos=tempo,
+        diagnostico=diagnostico,
     )
