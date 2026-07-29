@@ -1,6 +1,7 @@
 import { AlertTriangle, Clock, Download, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { buscarConcorrentes, exportarExcel } from './api/client'
+import { ComparativoBairros } from './components/ComparativoBairros'
 import { EvolucaoChart } from './components/EvolucaoChart'
 import { HistoricoPanel } from './components/HistoricoPanel'
 import { KpiBar } from './components/KpiBar'
@@ -276,6 +277,11 @@ export default function App() {
                 )}
 
                 <KpiBar dados={resultado} onEditarMRV={() => setMostrarFormMRV(true)} />
+
+                <ComparativoBairros
+                  dados={resultado.por_bairro ?? []}
+                  minimoConfiavel={MINIMO_AMOSTRA_CONFIAVEL}
+                />
 
                 {/* Gráfico de evolução histórica */}
                 {ultimaBusca && (

@@ -57,6 +57,26 @@ function calcularPosicionamento(preco_m2: number, media: number): {
   }
 }
 
+// Torre x bloco. "Sem info" é ausência de DADO, não de elevador — nenhum
+// portal declara "sem elevador", então o rótulo precisa dizer isso.
+const EDIFICACAO_MAP: Record<string, { label: string; color: string; titulo: string }> = {
+  torre: {
+    label: 'Torre',
+    color: 'bg-sky-900/50 text-sky-300 border border-sky-700/40',
+    titulo: 'Elevador declarado no anúncio ou unidade acima do 5º andar',
+  },
+  provavel_bloco: {
+    label: 'Provável bloco',
+    color: 'bg-mrv-surface-2 text-mrv-text-muted border border-mrv-border',
+    titulo: 'Inferido: unidade até o 4º andar e sem elevador declarado',
+  },
+  indefinido: {
+    label: 'Sem info',
+    color: 'bg-mrv-surface-2/60 text-mrv-text-dim border border-mrv-border/60',
+    titulo: 'O anúncio não informa elevador nem andar — não dá para afirmar torre ou bloco',
+  },
+}
+
 const PORTAL_MAP: Record<string, { label: string; color: string }> = {
   vivareal:     { label: 'VivaReal',      color: 'bg-emerald-900/60 text-emerald-300' },
   zapimoveis:   { label: 'ZAP',           color: 'bg-amber-900/60 text-amber-300' },
@@ -144,6 +164,14 @@ export function ResultCard({ empreendimento: e, precoM2Medio }: Props) {
           {e.construtora && (
             <span className="text-[10px] font-medium text-mrv-text-muted bg-mrv-surface-2/60 px-2 py-0.5 rounded-full">
               {e.construtora}
+            </span>
+          )}
+          {e.tipo_edificacao && EDIFICACAO_MAP[e.tipo_edificacao] && (
+            <span
+              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${EDIFICACAO_MAP[e.tipo_edificacao].color}`}
+              title={EDIFICACAO_MAP[e.tipo_edificacao].titulo}
+            >
+              {EDIFICACAO_MAP[e.tipo_edificacao].label}
             </span>
           )}
           {e.bairro && (

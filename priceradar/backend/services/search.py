@@ -8,7 +8,7 @@ import unicodedata
 import uuid
 from datetime import datetime
 
-from models import BuscaRequest, BuscaResponse, DiagnosticoColeta, Empreendimento
+from models import BuscaRequest, BuscaResponse, DiagnosticoColeta, Empreendimento, ResumoBairro
 from scraper.chavesnamao import scrape_chavesnamao
 from scraper.imovelweb import scrape_imovelweb
 from scraper.mercadolivre import scrape_mercadolivre
@@ -102,6 +102,39 @@ def _gerar_mock_data(request: BuscaRequest) -> list[dict]:
     return resultado
 
 
+def _resumir_por_bairro(
+    empreendimentos: list[Empreendimento], bairros_pedidos: list[str]
+) -> list[ResumoBairro]:
+    """
+    Quebra o resultado por bairro pedido, ordenado por preço/m² mediano.
+
+    Só faz sentido com mais de um bairro: com um só, o resumo repetiria o KPI
+    principal. Bairros pedidos que não trouxeram nada ficam de fora — a linha
+    zerada não informa nada que o total já não diga.
+    """
+    if len(bairros_pedidos) < 2:
+        return []
+
+    resumos = []
+    for pedido in bairros_pedidos:
+        alvo = _normalizar(pedido)
+        do_bairro = [e for e in empreendimentos if e.bairro and alvo in _normalizar(e.bairro)]
+        if not do_bairro:
+            continue
+        precos = sorted(e.preco_m2 for e in do_bairro)
+        resumos.append(ResumoBairro(
+            bairro=pedido,
+            total=len(do_bairro),
+            preco_m2_mediana=round(statistics.median(precos), 2),
+            preco_m2_medio=round(sum(precos) / len(precos), 2),
+            preco_m2_min=precos[0],
+            preco_m2_max=precos[-1],
+        ))
+
+    resumos.sort(key=lambda r: -r.preco_m2_mediana)
+    return resumos
+
+
 async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = None) -> BuscaResponse:
     inicio = time.time()
     contagem_por_portal: dict[str, int] = {}
@@ -112,11 +145,21 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
         raw_todos = _gerar_mock_data(request)
     else:
         cidade, estado = extrair_cidade_estado(request.cidade)
-        bairro = getattr(request, 'bairro', None)
+        bairros_pedidos = request.lista_bairros
+        # Os demais portais não filtram bairro na origem: mandamos o primeiro
+        # só por compatibilidade de assinatura e filtramos tudo em memória.
+        bairro = bairros_pedidos[0] if bairros_pedidos else None
 
-        # Monta todas as tarefas de scraping habilitadas
+        # O VivaReal filtra bairro no PATH e aceita só um por URL — então cada
+        # bairro pedido vira uma tarefa própria. É o que faz a proporção de
+        # anúncios do bairro certo subir de ~3% para ~85%.
+        tarefas_vivareal = [
+            ("vivareal", scrape_vivareal(request.cidade, request.preco_min, request.preco_max, request.quartos, b))
+            for b in (bairros_pedidos or [None])
+        ]
+
         tarefas_candidatas: list[tuple[str, object]] = [
-            ("vivareal", scrape_vivareal(request.cidade, request.preco_min, request.preco_max, request.quartos, bairro)),
+            *tarefas_vivareal,
             ("zapimoveis", scrape_zapimoveis(cidade, estado, request.preco_min, request.preco_max, request.quartos, bairro)),
         ]
         if MERCADOLIVRE_HABILITADO:
@@ -144,11 +187,18 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
                 ("olx", scrape_olximoveis(cidade, estado, request.preco_min, request.preco_max, request.quartos))
             )
 
-        # Reordena as tarefas por prioridade histórica (RF) antes de disparar
-        nomes = [t[0] for t in tarefas_candidatas]
-        nomes_ordenados = ordenar_fontes_por_prioridade(nomes, request.cidade, request.preco_min, request.preco_max, request.quartos)
-        mapa = {nome: coroutine for nome, coroutine in tarefas_candidatas}
-        tarefas = [(nome, mapa[nome]) for nome in nomes_ordenados]
+        # Reordena por prioridade histórica antes de disparar. A ordenação é
+        # por PORTAL, mas pode haver várias tarefas do mesmo portal (uma por
+        # bairro no VivaReal) — por isso o agrupamento em vez de um dict, que
+        # colapsaria as tarefas repetidas.
+        por_portal: dict[str, list] = {}
+        for nome, coro in tarefas_candidatas:
+            por_portal.setdefault(nome, []).append(coro)
+
+        nomes_ordenados = ordenar_fontes_por_prioridade(
+            list(por_portal), request.cidade, request.preco_min, request.preco_max, request.quartos
+        )
+        tarefas = [(nome, coro) for nome in nomes_ordenados for coro in por_portal[nome]]
 
         resultados = await asyncio.gather(*(t[1] for t in tarefas), return_exceptions=True)
 
@@ -156,11 +206,13 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
         for (portal, _), resultado in zip(tarefas, resultados):
             if isinstance(resultado, Exception):
                 logger.warning(f"Scraper {portal} falhou: {resultado}")
-                contagem_por_portal[portal] = 0
-                fontes_erro.append(portal)
+                contagem_por_portal.setdefault(portal, 0)
+                if portal not in fontes_erro:
+                    fontes_erro.append(portal)
                 continue
             n = len(resultado)
-            contagem_por_portal[portal] = n
+            # Soma: um portal pode ter rodado várias vezes (uma por bairro).
+            contagem_por_portal[portal] = contagem_por_portal.get(portal, 0) + n
             logger.info(f"Scraper {portal}: {n} resultados")
             raw_todos.extend(resultado)
 
@@ -178,14 +230,31 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
     # divergente e valores implausíveis ANTES que contaminem o KPI.
     raw_todos, descartes = filtrar_anuncios(raw_todos, request)
 
-    # Filtro por bairro
-    bairro_filtro = getattr(request, 'bairro', None)
-    if bairro_filtro:
-        bairro_norm = _normalizar(bairro_filtro)
+    # Filtro torre × bloco. Nenhum portal filtra elevador na origem, então é
+    # aplicado aqui. A contagem do que saiu vai para o diagnóstico: sem isso o
+    # total cai e parece que o mercado encolheu, quando na verdade foi o filtro.
+    tipo_filtro = getattr(request, 'tipo_edificacao', None)
+    if tipo_filtro:
+        antes = len(raw_todos)
+        raw_todos = [i for i in raw_todos if i.get('tipo_edificacao') == tipo_filtro]
+        removidos = antes - len(raw_todos)
+        if removidos:
+            descartes['outro_tipo_edificacao'] = descartes.get('outro_tipo_edificacao', 0) + removidos
+            logger.info(f"Filtro tipo_edificacao={tipo_filtro}: {antes} → {len(raw_todos)}")
+
+    # Filtro por bairro. Só o VivaReal filtra na origem; o que vem dos demais
+    # portais é recortado aqui, contra o campo `bairro` já corrigido.
+    bairros_filtro = request.lista_bairros
+    if bairros_filtro:
+        alvos = [_normalizar(b) for b in bairros_filtro]
+        antes_bairro = len(raw_todos)
         raw_todos = [
             item for item in raw_todos
-            if item.get('bairro') and bairro_norm in _normalizar(item['bairro'])
+            if item.get('bairro') and any(a in _normalizar(item['bairro']) for a in alvos)
         ]
+        fora = antes_bairro - len(raw_todos)
+        if fora:
+            descartes['fora_dos_bairros'] = descartes.get('fora_dos_bairros', 0) + fora
 
     # Deduplicação por URL (remoção de duplicatas do mesmo portal/URL)
     vistos: set[str] = set()
@@ -244,6 +313,7 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
 
     precos_m2 = sorted(e.preco_m2 for e in empreendimentos)
     return BuscaResponse(
+        por_bairro=_resumir_por_bairro(empreendimentos, bairros_filtro),
         total=len(empreendimentos),
         preco_m2_medio=round(sum(precos_m2) / len(precos_m2), 2),
         preco_m2_mediana=round(statistics.median(precos_m2), 2),

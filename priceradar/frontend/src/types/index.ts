@@ -6,6 +6,7 @@ export interface Empreendimento {
   cidade: string
   bairro: string | null
   endereco: string | null
+  tipo_edificacao: string | null
   portal: string
   preco: number
   area_m2: number
@@ -37,6 +38,17 @@ export interface BuscaRequest {
   preco_max: number
   quartos: number | null
   bairro?: string | null
+  bairros?: string[] | null
+  tipo_edificacao?: string | null
+}
+
+export interface ResumoBairro {
+  bairro: string
+  total: number
+  preco_m2_mediana: number
+  preco_m2_medio: number
+  preco_m2_min: number
+  preco_m2_max: number
 }
 
 export interface BuscaResponse {
@@ -50,6 +62,7 @@ export interface BuscaResponse {
   tempo_coleta_segundos: number
   do_cache: boolean
   diagnostico?: DiagnosticoColeta | null
+  por_bairro?: ResumoBairro[]
 }
 
 export interface BuscaSalva {

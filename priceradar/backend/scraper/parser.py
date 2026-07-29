@@ -138,6 +138,87 @@ def _indice_da_sequencia(tokens: list[str], sequencia: list[str]) -> int | None:
     return None
 
 
+# ── Classificação torre × bloco ──────────────────────────────────────────────
+#
+# Torre e bloco são produtos diferentes e não deveriam entrar no mesmo preço/m².
+# O sinal disponível é o elevador: torre tem, bloco não.
+#
+# A assimetria que define este código: `"sem elevador"` aparece em ZERO de 30
+# anúncios medidos. Ninguém anuncia a ausência. Então:
+#
+#   elevador declarado        → evidência de TORRE
+#   nada declarado            → ausência de DADO, não de elevador
+#
+# Por isso existe o rótulo `indefinido` (~48% da base) em vez de empurrar tudo
+# para "bloco". Marcar como bloco o que apenas não foi declarado seria afirmar
+# algo falso em metade dos anúncios, sem que ninguém pudesse perceber.
+
+TORRE = "torre"
+PROVAVEL_BLOCO = "provavel_bloco"
+INDEFINIDO = "indefinido"
+
+# Prédio sem elevador raramente passa de 4 pavimentos; a partir do 5º, tem.
+_ANDAR_MINIMO_TORRE = 5
+
+_RE_ELEVADOR = re.compile(r'\belevador', re.IGNORECASE)
+_RE_ANDAR = re.compile(r'\b(\d{1,2})\s*[ºo°]?\s*(?:andar|pavimento)', re.IGNORECASE)
+
+
+def classificar_edificacao(amenidades: list[str] | None, texto: str | None) -> str:
+    """
+    Classifica o anúncio em torre, provável bloco ou indefinido.
+
+    `amenidades` são os valores de `amenityFeature` do JSON-LD (ex.: "Elevator").
+    `texto` é título + descrição.
+
+    Só devolve TORRE com evidência positiva. `PROVAVEL_BLOCO` é inferência a
+    partir do andar e vem rotulado como provável de propósito — o card mostra
+    o rótulo para que quem lê saiba o que é medido e o que é deduzido.
+    """
+    valores = [str(a).lower() for a in (amenidades or [])]
+    conteudo = texto or ""
+
+    tem_elevador = any("elevator" in v or "elevador" in v for v in valores)
+    if tem_elevador or _RE_ELEVADOR.search(conteudo):
+        return TORRE
+
+    andar = _maior_andar(conteudo)
+    if andar is not None:
+        if andar >= _ANDAR_MINIMO_TORRE:
+            return TORRE
+        return PROVAVEL_BLOCO
+
+    return INDEFINIDO
+
+
+def _maior_andar(texto: str) -> int | None:
+    """
+    Maior andar citado no texto.
+
+    Pega o maior porque um anúncio pode citar vários números ("do 2º ao 12º
+    andar") e o que interessa é a altura do prédio, não a da unidade.
+    """
+    andares = [int(m.group(1)) for m in _RE_ANDAR.finditer(texto)]
+    andares = [a for a in andares if 0 < a <= 60]  # descarta ruído de parsing
+    return max(andares) if andares else None
+
+
+def extrair_amenidades(item: dict) -> list[str]:
+    """Valores de `amenityFeature` do JSON-LD, tolerante a formatos diferentes."""
+    bruto = item.get("amenityFeature") or []
+    if isinstance(bruto, dict):
+        bruto = [bruto]
+    valores = []
+    for a in bruto:
+        if isinstance(a, dict):
+            v = a.get("value") or a.get("name")
+            if v:
+                valores.append(str(v))
+        elif a:
+            valores.append(str(a))
+    return valores
+
+
 # ── Agente 3: lista expandida de construtoras ─────────────────────────────────
 
 # Lista de construtoras/incorporadoras conhecidas — nacional + Nordeste/CE.

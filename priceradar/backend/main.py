@@ -42,6 +42,7 @@ from repositories.empreendimento_repo import (
     preco_m2_historico,
     upsert_referencial_mrv,
 )
+from services.bairros import listar_bairros
 from services.export import gerar_excel
 from services.search import executar_busca
 
@@ -116,6 +117,17 @@ async def exportar(payload: ExportRequest):
     except Exception as e:
         logger.error(f"Erro em /api/exportar: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/bairros")
+async def listar_bairros_da_cidade(cidade: str):
+    """Bairros com oferta na cidade, para sugerir no formulário."""
+    try:
+        return {"cidade": cidade, "bairros": await listar_bairros(cidade)}
+    except Exception as e:
+        # Sugestão é conveniência: falhar aqui não pode atrapalhar a busca.
+        logger.warning(f"Erro ao listar bairros de {cidade}: {e}")
+        return {"cidade": cidade, "bairros": []}
 
 
 # ── Histórico ──────────────────────────────────────────────────────────────────

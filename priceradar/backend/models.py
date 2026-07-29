@@ -13,6 +13,9 @@ class Empreendimento(BaseModel):
     # Logradouro. Vem separado do bairro porque o JSON-LD dos portais traz os
     # dois em campos distintos e misturá-los quebrava o filtro de bairro.
     endereco: str | None = None
+    # torre | provavel_bloco | indefinido. Ver classificar_edificacao() em
+    # scraper/parser.py — 'indefinido' é ausência de dado, não de elevador.
+    tipo_edificacao: str | None = None
     portal: str
     preco: float
     area_m2: float
@@ -31,6 +34,22 @@ class Empreendimento(BaseModel):
     # e outros portais onde o mesmo imóvel foi encontrado.
     campos_imputados: list[str] = []
     portais_duplicados: list[str] = []
+
+
+class ResumoBairro(BaseModel):
+    """
+    Recorte de um bairro na busca.
+
+    Existe porque uma mediana única sobre vários bairros esconde exatamente a
+    diferença que a análise procura — Aldeota e Messejana no mesmo número não
+    respondem "onde compensa lançar?".
+    """
+    bairro: str
+    total: int
+    preco_m2_mediana: float
+    preco_m2_medio: float
+    preco_m2_min: float
+    preco_m2_max: float
 
 
 class DiagnosticoColeta(BaseModel):
@@ -54,7 +73,28 @@ class BuscaRequest(BaseModel):
     preco_min: float
     preco_max: float
     quartos: int | None = None
+    # `bairro` continua aceito para não quebrar o histórico e o cache já
+    # gravados; `bairros` é a forma nova. Use sempre `lista_bairros`.
     bairro: str | None = None
+    bairros: list[str] | None = None
+    # torre | provavel_bloco | indefinido. Nenhum portal filtra elevador na
+    # origem, então é aplicado depois da coleta.
+    tipo_edificacao: str | None = None
+
+    @property
+    def lista_bairros(self) -> list[str]:
+        """Bairros pedidos, sem duplicata e sem vazio, vindos de qualquer campo."""
+        brutos = list(self.bairros or [])
+        if self.bairro:
+            brutos.append(self.bairro)
+        vistos, saida = set(), []
+        for b in brutos:
+            limpo = b.strip()
+            chave = limpo.lower()
+            if limpo and chave not in vistos:
+                vistos.add(chave)
+                saida.append(limpo)
+        return saida
 
     @field_validator("cidade")
     @classmethod
@@ -90,6 +130,8 @@ class BuscaResponse(BaseModel):
     tempo_coleta_segundos: float
     do_cache: bool = False
     diagnostico: DiagnosticoColeta | None = None
+    # Preenchido só quando a busca pediu mais de um bairro.
+    por_bairro: list[ResumoBairro] = []
 
 
 class ExportRequest(BaseModel):

@@ -9,13 +9,29 @@ from database.models_db import BuscaSalva, EmpreendimentoDB
 from models import BuscaRequest, BuscaResponse, Empreendimento
 
 
+def _chave_bairros(request) -> str | None:
+    """
+    Bairros normalizados e ordenados numa string, para a chave de cache.
+
+    Sem ordenar, buscar "Aldeota, Meireles" e "Meireles, Aldeota" seriam duas
+    entradas diferentes no cache para a mesma pergunta.
+    """
+    bairros = getattr(request, 'lista_bairros', None)
+    if bairros is None:
+        b = getattr(request, 'bairro', None)
+        bairros = [b] if b else []
+    if not bairros:
+        return None
+    return ','.join(sorted(b.strip().lower() for b in bairros if b and b.strip()))
+
+
 async def salvar_busca(db: AsyncSession, busca: BuscaRequest, resultado: BuscaResponse) -> str:
     nova = BuscaSalva(
         cidade=busca.cidade,
         preco_min=busca.preco_min,
         preco_max=busca.preco_max,
         quartos=busca.quartos,
-        bairro=getattr(busca, 'bairro', None),
+        bairro=_chave_bairros(busca),
         total_encontrado=resultado.total,
         preco_m2_medio=resultado.preco_m2_medio,
         preco_m2_mediana=resultado.preco_m2_mediana,
@@ -32,6 +48,7 @@ async def salvar_busca(db: AsyncSession, busca: BuscaRequest, resultado: BuscaRe
             cidade=emp.cidade,
             bairro=emp.bairro,
             endereco=emp.endereco,
+            tipo_edificacao=emp.tipo_edificacao,
             portal=emp.portal,
             preco=emp.preco,
             area_m2=emp.area_m2,
@@ -62,7 +79,7 @@ async def buscar_cache_recente(
     banco — evitando refazer o scraping. Retorna None se não houver cache válido.
     """
     limite = datetime.utcnow() - timedelta(minutes=minutos_validade)
-    bairro = getattr(request, 'bairro', None)
+    bairro = _chave_bairros(request)
 
     q = (
         select(BuscaSalva)
@@ -99,6 +116,7 @@ async def buscar_cache_recente(
             cidade=e.cidade,
             bairro=e.bairro,
             endereco=e.endereco,
+            tipo_edificacao=e.tipo_edificacao,
             portal=e.portal,
             preco=e.preco,
             area_m2=e.area_m2,

@@ -88,3 +88,14 @@ export async function consultarReferencialMRV(
   })
   return data
 }
+
+/** Bairros com oferta na cidade, para sugerir no formulário. */
+export async function listarBairros(cidade: string): Promise<string[]> {
+  try {
+    const { data } = await api.get<{ bairros: string[] }>('/api/bairros', { params: { cidade } })
+    return data.bairros ?? []
+  } catch {
+    // Sugestão é conveniência — falhar aqui não pode travar o formulário.
+    return []
+  }
+}

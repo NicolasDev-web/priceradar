@@ -12,6 +12,8 @@ from scraper.browser import buscar_html_playwright
 from scraper.http import buscar_html
 from scraper.parser import (
     calcular_preco_m2,
+    classificar_edificacao,
+    extrair_amenidades,
     extrair_bairro_do_slug,
     extrair_construtora,
     extrair_nome_empreendimento,
@@ -131,6 +133,10 @@ def _parse_json_ld(
                 endereco = addr.get('streetAddress')
                 bairro_item = extrair_bairro_do_slug(url_anuncio, cidade_normalizada)
 
+                # Torre x bloco: amenityFeature traz 'Elevator' de forma estruturada.
+                amenidades = extrair_amenidades(item)
+                tipo_edificacao = classificar_edificacao(amenidades, f'{nome} {descricao_full}')
+
                 nome_emp = extrair_nome_empreendimento(descricao_full)
                 construtora = extrair_construtora(nome, descricao_full)
 
@@ -145,6 +151,7 @@ def _parse_json_ld(
                     'cidade': cidade_normalizada,
                     'bairro': bairro_item,
                     'endereco': endereco,
+                    'tipo_edificacao': tipo_edificacao,
                     'portal': 'vivareal',
                     'preco': float(preco),
                     'area_m2': float(area),
