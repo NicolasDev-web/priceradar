@@ -8,7 +8,11 @@ import type {
   ReferencialMRVResponse,
 } from '../types'
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// Vazio = mesma origem. Em produção o FastAPI serve o frontend compilado, então
+// a API está no mesmo host:porta — e é isso que faz a aplicação funcionar quando
+// outra pessoa acessa pela rede: com URL absoluta, "localhost" seria a máquina
+// DELA. VITE_API_URL só é usada no desenvolvimento (Vite em 5173, API em 8002).
+const BASE_URL = import.meta.env.VITE_API_URL ?? ''
 
 // timeout de 90s: o scraping via ScraperAPI pode levar alguns segundos por portal
 const api = axios.create({ baseURL: BASE_URL, timeout: 90_000 })

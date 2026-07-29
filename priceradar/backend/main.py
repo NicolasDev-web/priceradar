@@ -10,10 +10,13 @@ from datetime import datetime
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
+from pathlib import Path
+
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 
 load_dotenv()
@@ -52,6 +55,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PriceRadar API", version="2.0.0", lifespan=lifespan)
 
+# Em produção o frontend é servido por este mesmo processo (mesma origem), então
+# CORS não entra em jogo. Estas origens existem só para o desenvolvimento, com o
+# Vite em 5173 e a API aqui em 8002.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
@@ -171,3 +177,31 @@ async def consultar_referencial(
 ):
     preco = await get_referencial_mrv(db, cidade, quartos)
     return {"cidade": cidade, "quartos": quartos, "preco_m2_mrv": preco}
+
+
+# ── Frontend ───────────────────────────────────────────────────────────────────
+# Servir o frontend compilado pelo próprio FastAPI deixa tudo numa porta só:
+# uma regra de firewall, um processo, e o navegador do colega pede a API para
+# a mesma origem que serviu a página. Registrado DEPOIS das rotas /api/* —
+# na ordem inversa o catch-all as sombrearia.
+
+_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
+
+if _DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
+
+    @app.get("/{caminho:path}")
+    async def servir_spa(caminho: str):
+        """Serve o arquivo pedido ou cai no index.html (rotas do SPA)."""
+        arquivo = (_DIST / caminho).resolve()
+        # Impede que "../" escape do diretório do build.
+        if caminho and arquivo.is_file() and arquivo.is_relative_to(_DIST):
+            return FileResponse(arquivo)
+        return FileResponse(_DIST / "index.html")
+
+    logger.info(f"Frontend servido de {_DIST}")
+else:
+    logger.warning(
+        f"Build do frontend não encontrado em {_DIST} — apenas a API está disponível. "
+        "Rode `npm run build` em priceradar/frontend."
+    )

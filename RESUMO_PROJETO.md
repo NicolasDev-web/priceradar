@@ -129,11 +129,15 @@ Fortaleza-CE, R$280k–500k, 2 quartos:
 3. **`construtora` fica vazia na maioria dos casos (~6%).** A lista de construtoras conhecidas foi
    podada de termos ambíguos ("Sky", "You", "Morada Nova" — que é cidade do CE) porque geravam nome
    errado. Preencher de verdade exige outra fonte de dados, não regex.
-4. **O campo `bairro` traz endereço de rua** em VivaReal, Zap e ImovelWeb — só o ChavesNaMão traz
-   bairro de fato. Isso limita o filtro de bairro e a dedup por localização.
+4. **O bairro vem do slug da URL, não de um campo estruturado** (VivaReal e Zap não expõem bairro
+   no JSON-LD). A extração acerta ~83% dos anúncios; anúncios de lançamento ficam sem bairro,
+   porque usam outro formato de URL. O ImovelWeb ainda não teve o campo corrigido.
 5. **KPI sobre tipologias misturadas não é acionável.** 1 quarto custa ~14.000/m² e 3 quartos
    ~6.000/m² na mesma cidade. Buscar sem filtro de tipologia produz um número sem significado —
    sempre filtre por quartos.
+6. **Filtrar bairro nobre com teto de preço baixo distorce a leitura.** Aldeota com teto de
+   R$700k devolve mediana de ~R$4.700/m², porque só entram apartamentos antigos e grandes
+   (90-196 m²). O número está certo; o recorte é que seleciona estoque antigo.
 6. **Fragilidade estrutural.** Os portais podem mudar de layout a qualquer momento. Os testes
    detectam a quebra rápido, mas não a impedem.
 7. **Cobertura fora de Fortaleza não validada.** Cada praça nova precisa ser conferida.
@@ -141,24 +145,70 @@ Fortaleza-CE, R$280k–500k, 2 quartos:
 
 ---
 
-## 6. Como rodar
+## 6. Como usar no dia a dia
+
+**Dê dois cliques em `iniciar-priceradar.bat`** (na raiz do projeto). Ele sobe a
+aplicação, mostra os endereços na tela e abre o navegador.
+
+| Quem | Endereço |
+|---|---|
+| Nesta máquina | `http://localhost:8002` |
+| Outra pessoa na mesma rede | `http://192.168.0.35:8002` |
+
+Para encerrar, feche a janela preta.
+
+> O IP pode mudar se a máquina reconectar no Wi-Fi. O `.bat` mostra o IP atual
+> ao iniciar; se mudar com frequência, vale pedir IP fixo à TI ou usar o nome
+> da máquina no lugar do número.
+
+### Pré-requisito, uma vez só
+
+Liberar a porta 8002 no Firewall do Windows. Em um **PowerShell como
+administrador**:
+
+```powershell
+New-NetFirewallRule -DisplayName "PriceRadar" -Direction Inbound `
+  -LocalPort 8002 -Protocol TCP -Action Allow -Profile Private,Domain
+```
+
+`-Profile Private,Domain` restringe a redes confiáveis — a aplicação **não**
+fica exposta em redes públicas.
+
+### Instalação em uma máquina nova
 
 ```bash
-# Backend
 cd priceradar/backend
-python -m venv venv && venv/Scripts/activate     # Windows
+python -m venv venv && venv/Scripts/activate
 pip install -r requirements.txt
-playwright install chromium                       # só para o fallback
-cp .env.example .env                              # preencha se for usar ScraperAPI
-uvicorn main:app --port 8002
+playwright install chromium          # só para o fallback
+cp .env.example .env                 # a chave da ScraperAPI é opcional
 
-# Frontend
-cd priceradar/frontend
-npm install && npm run dev
+cd ../frontend
+npm install && npm run build         # gera o dist/ que o backend serve
+```
 
-# Testes
+### Desenvolvimento
+
+```bash
+cd priceradar/backend  && uvicorn main:app --port 8002 --reload
+cd priceradar/frontend && npm run dev        # usa .env.local, porta 5173
+```
+
+Depois de mexer no frontend, rode `npm run build` de novo — em produção o
+FastAPI serve o `dist/`, não o servidor do Vite.
+
+### Testes
+
+```bash
 cd priceradar/backend && python -m pytest tests/ -q
 ```
+
+### Segurança: o que está e o que não está protegido
+
+Não há login. Quem estiver na rede do escritório e souber o endereço abre a
+aplicação. É uma escolha consciente para uma ferramenta interna de duas
+pessoas atrás do firewall corporativo — e deixa de valer se ela precisar sair
+da rede interna.
 
 ---
 

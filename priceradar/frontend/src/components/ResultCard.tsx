@@ -60,8 +60,10 @@ function calcularPosicionamento(preco_m2: number, media: number): {
 const PORTAL_MAP: Record<string, { label: string; color: string }> = {
   vivareal:     { label: 'VivaReal',      color: 'bg-emerald-900/60 text-emerald-300' },
   zapimoveis:   { label: 'ZAP',           color: 'bg-amber-900/60 text-amber-300' },
-  olx:          { label: 'OLX',           color: 'bg-indigo-900/60 text-indigo-300' },
+  chavesnamao:  { label: 'ChavesNaMão',   color: 'bg-rose-900/60 text-rose-300' },
   imovelweb:    { label: 'ImovelWeb',     color: 'bg-sky-900/60 text-sky-300' },
+  olx:          { label: 'OLX',           color: 'bg-indigo-900/60 text-indigo-300' },
+  quintoandar:  { label: 'QuintoAndar',   color: 'bg-teal-900/60 text-teal-300' },
   netimoveis:   { label: 'NetImóveis',    color: 'bg-violet-900/60 text-violet-300' },
   mercadolivre: { label: 'Mercado Livre', color: 'bg-yellow-900/60 text-yellow-300' },
 }

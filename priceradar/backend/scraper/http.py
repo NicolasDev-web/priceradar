@@ -20,7 +20,8 @@ limite de quantas buscas o time comercial pode fazer.
 import asyncio
 import logging
 import os
-from urllib.parse import urlencode
+import random
+from urllib.parse import urlencode, urlparse
 
 import httpx
 
@@ -46,6 +47,48 @@ _HEADERS = {
     "Cache-Control": "no-cache",
 }
 
+# ── Espaçamento de requisições ───────────────────────────────────────────────
+# Os scrapers disparam todas as páginas de uma vez (o ChavesNaMão chega a 12).
+# Doze requisições simultâneas ao mesmo host não é padrão de navegação humana,
+# e o custo de parecer robô é perder o acesso gratuito que sustenta o projeto.
+#
+# Duas medidas, ambas por domínio: um teto de conexões simultâneas e um atraso
+# aleatório antes de cada requisição. O atraso é sorteado — intervalo fixo é
+# tão identificável quanto rajada.
+_MAX_SIMULTANEAS_POR_HOST = int(os.getenv("MAX_SIMULTANEAS_POR_HOST", "3"))
+_JITTER_MIN = float(os.getenv("JITTER_MIN_SEG", "0.3"))
+_JITTER_MAX = float(os.getenv("JITTER_MAX_SEG", "1.2"))
+
+_semaforos: dict[str, asyncio.Semaphore] = {}
+
+
+def _semaforo_do_host(url: str) -> asyncio.Semaphore:
+    """Um semáforo por domínio — portais diferentes não competem entre si."""
+    host = urlparse(url).netloc or "desconhecido"
+    if host not in _semaforos:
+        _semaforos[host] = asyncio.Semaphore(_MAX_SIMULTANEAS_POR_HOST)
+    return _semaforos[host]
+
+
+async def _aguardar_jitter() -> None:
+    await asyncio.sleep(random.uniform(_JITTER_MIN, _JITTER_MAX))
+
+
+_sessoes: dict[str, object] = {}
+
+
+def _sessao_do_host(url: str, cr) -> object:
+    """
+    Uma Session de curl-cffi por domínio, reaproveitada entre requisições.
+
+    Mantém cookies, então o desafio de segurança do portal é resolvido uma vez
+    em vez de a cada página — menos challenge e menos tempo por busca.
+    """
+    host = urlparse(url).netloc or "desconhecido"
+    if host not in _sessoes:
+        _sessoes[host] = cr.Session()
+    return _sessoes[host]
+
 
 async def buscar_html_direto(target_url: str, portal: str) -> str | None:
     """
@@ -60,8 +103,12 @@ async def buscar_html_direto(target_url: str, portal: str) -> str | None:
         logger.debug("curl-cffi não instalado — pulando fetch direto")
         return None
 
+    sessao = _sessao_do_host(target_url, cr)
+
     def _get() -> tuple[int, str]:
-        resp = cr.get(
+        # Session reaproveita cookies entre páginas do mesmo portal: o desafio
+        # de segurança é resolvido uma vez, não a cada requisição.
+        resp = sessao.get(
             target_url,
             impersonate=IMPERSONATE,
             timeout=TIMEOUT_SEGUNDOS,
@@ -70,7 +117,9 @@ async def buscar_html_direto(target_url: str, portal: str) -> str | None:
         return resp.status_code, resp.text
 
     try:
-        status, html = await asyncio.to_thread(_get)
+        async with _semaforo_do_host(target_url):
+            await _aguardar_jitter()
+            status, html = await asyncio.to_thread(_get)
     except Exception as e:
         logger.info(f"{portal}: fetch direto falhou ({type(e).__name__}: {str(e)[:80]})")
         return None
