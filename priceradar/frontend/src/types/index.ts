@@ -1,0 +1,79 @@
+export interface Empreendimento {
+  id: string
+  nome_anuncio: string
+  nome_empreendimento: string | null
+  construtora: string | null
+  cidade: string
+  bairro: string | null
+  portal: string
+  preco: number
+  area_m2: number
+  preco_m2: number
+  preco_m2_mrv: number | null
+  variacao_mrv_pct: number | null
+  quartos: number | null
+  banheiros: number | null
+  vagas: number | null
+  descricao: string | null
+  url_anuncio: string
+  data_coleta: string
+  rf_score?: number
+}
+
+export interface BuscaRequest {
+  cidade: string
+  preco_min: number
+  preco_max: number
+  quartos: number | null
+  bairro?: string | null
+}
+
+export interface BuscaResponse {
+  total: number
+  preco_m2_medio: number
+  preco_m2_min: number
+  preco_m2_max: number
+  preco_m2_mrv: number | null
+  empreendimentos: Empreendimento[]
+  tempo_coleta_segundos: number
+  do_cache: boolean
+}
+
+export interface BuscaSalva {
+  id: string
+  cidade: string
+  preco_min: number
+  preco_max: number
+  quartos: number | null
+  total_encontrado: number
+  preco_m2_medio: number
+  criado_em: string
+}
+
+export interface PontoEvolucao {
+  semana: string
+  preco_m2_medio: number
+  total: number
+}
+
+export interface HistoricoResponse {
+  buscas: BuscaSalva[]
+}
+
+export interface EvolucaoResponse {
+  cidade: string
+  serie: PontoEvolucao[]
+}
+
+export interface ReferencialMRVInput {
+  cidade: string
+  produto: string
+  preco_m2: number
+  quartos: number | null
+}
+
+export interface ReferencialMRVResponse {
+  cidade: string
+  quartos: number | null
+  preco_m2_mrv: number | null
+}

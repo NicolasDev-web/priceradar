@@ -1,0 +1,18 @@
+{
+  "busca_ref": "2026-06-21 03:53:24",
+  "n": 73,
+  "media": 8011.5,
+  "mediana": 7301.6,
+  "gap_media_mediana_pct": 9.7,
+  "pm2_min": 2743,
+  "pm2_max": 18414,
+  "max_sobre_mediana": 2.52,
+  "locacao": 2,
+  "faixa_area": 8,
+  "com_construtora_pct": 12,
+  "por_portal": {
+    "chavesnamao": 3,
+    "vivareal": 20,
+    "zapimoveis": 50
+  }
+}

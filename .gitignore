@@ -1,0 +1,39 @@
+# Segredos — NUNCA commitar
+.env
+*.env
+!.env.example
+
+# Ambientes virtuais / dependências
+venv/
+.venv/
+node_modules/
+__pycache__/
+*.py[cod]
+
+# Banco de dados e dados coletados
+*.db
+*.db-journal
+*.sqlite
+priceradar/backend/data/historico_fontes.json
+
+# Build do frontend
+dist/
+.vite/
+
+# Logs e artefatos de execução
+*.log
+uvicorn.log
+uvicorn_err.log
+
+# Artefatos de verificação/debug
+screenshots/
+*.xlsx
+
+# Perfil persistente do Playwright
+.priceradar_browser_profile/
+
+# Sistema operacional / editores
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/
