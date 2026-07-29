@@ -1,4 +1,4 @@
-import { Clock, Download, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Clock, Download, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { buscarConcorrentes, exportarExcel } from './api/client'
 import { EvolucaoChart } from './components/EvolucaoChart'
@@ -15,11 +15,15 @@ import type { BuscaRequest, BuscaResponse, BuscaSalva } from './types'
 const PORTAL_CONFIG: Record<string, { label: string; color: string }> = {
   vivareal:     { label: 'VivaReal',     color: 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/40' },
   zapimoveis:   { label: 'ZAP',          color: 'bg-amber-900/60 text-amber-300 border border-amber-700/40' },
-  olx:          { label: 'OLX',          color: 'bg-indigo-900/60 text-indigo-300 border border-indigo-700/40' },
+  chavesnamao:  { label: 'ChavesNaMão',  color: 'bg-rose-900/60 text-rose-300 border border-rose-700/40' },
   imovelweb:    { label: 'ImovelWeb',    color: 'bg-sky-900/60 text-sky-300 border border-sky-700/40' },
+  olx:          { label: 'OLX',          color: 'bg-indigo-900/60 text-indigo-300 border border-indigo-700/40' },
+  quintoandar:  { label: 'QuintoAndar',  color: 'bg-teal-900/60 text-teal-300 border border-teal-700/40' },
   netimoveis:   { label: 'NetImóveis',   color: 'bg-violet-900/60 text-violet-300 border border-violet-700/40' },
   mercadolivre: { label: 'Mercado Livre',color: 'bg-yellow-900/60 text-yellow-300 border border-yellow-700/40' },
 }
+
+const LABEL_PORTAL = (p: string) => PORTAL_CONFIG[p]?.label ?? p
 
 export default function App() {
   const [loading, setLoading] = useState(false)
@@ -29,6 +33,10 @@ export default function App() {
   const [ultimaBusca, setUltimaBusca] = useState<BuscaRequest | null>(null)
   const [mostrarHistorico, setMostrarHistorico] = useState(false)
   const [mostrarFormMRV, setMostrarFormMRV] = useState(false)
+
+  const fontesErro = resultado?.diagnostico?.fontes_erro ?? []
+  const coletaFalhou = (resultado?.diagnostico?.fontes_ok.length ?? 0) === 0
+  const coletaParcial = fontesErro.length > 0 && !coletaFalhou
 
   async function handleBuscar(params: BuscaRequest, forcar = false) {
     setLoading(true)
@@ -147,7 +155,35 @@ export default function App() {
         {resultado && !loading && (
           <>
             {resultado.total === 0 ? (
-              /* Estado vazio — funcional e informativo */
+              /* Estado vazio. Distingue falha de coleta de ausência real de
+                 mercado: apresentar uma falha técnica como "não há imóveis"
+                 leva o time a conclusões erradas sobre o recorte. */
+              coletaFalhou ? (
+                <div className="bg-mrv-surface border border-red-800/50 rounded-panel p-12 text-center">
+                  <AlertTriangle size={36} className="mx-auto text-red-400 mb-4" />
+                  <p className="text-mrv-text font-semibold text-base mb-1">
+                    Falha na coleta — resultado não confiável
+                  </p>
+                  <p className="text-mrv-text-muted text-sm mb-5 max-w-md mx-auto leading-relaxed">
+                    Nenhuma fonte respondeu. Isto <strong className="text-mrv-text">não</strong> significa
+                    que não existem imóveis nesse recorte — significa que não conseguimos consultar os portais.
+                  </p>
+                  <div className="inline-block text-left bg-mrv-surface-2/50 border border-mrv-border rounded-card px-5 py-4">
+                    <p className="text-mrv-text-muted text-xs font-semibold uppercase tracking-wider mb-2">Fontes com erro</p>
+                    <p className="text-red-300 text-sm">{fontesErro.map(LABEL_PORTAL).join(' · ') || '—'}</p>
+                  </div>
+                  <div className="mt-5">
+                    <button
+                      type="button"
+                      onClick={handleAtualizar}
+                      className="flex items-center gap-1.5 mx-auto text-xs font-semibold text-mrv-orange border border-mrv-orange/40 px-4 py-2 rounded-card hover:bg-mrv-orange hover:text-white transition-colors"
+                    >
+                      <RefreshCw size={13} />
+                      Tentar novamente
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div className="bg-mrv-surface border border-mrv-border rounded-panel p-16 text-center">
                 {/* Ícone de radar estático */}
                 <div className="relative w-20 h-20 mx-auto mb-6">
@@ -173,6 +209,7 @@ export default function App() {
                   <p className="text-mrv-text-muted text-sm">· Verifique a grafia da cidade</p>
                 </div>
               </div>
+              )
             ) : (
               <>
                 {resultado.do_cache && (
@@ -190,6 +227,20 @@ export default function App() {
                       <RefreshCw size={13} />
                       Atualizar
                     </button>
+                  </div>
+                )}
+
+                {/* Coleta parcial: há resultado, mas alguma fonte falhou.
+                    O número é utilizável, só que sobre uma amostra menor. */}
+                {coletaParcial && (
+                  <div className="flex items-start gap-2.5 bg-amber-950/40 border border-amber-800/40 rounded-card px-4 py-3 mb-4">
+                    <AlertTriangle size={15} className="text-amber-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-amber-200/90 leading-relaxed">
+                      <span className="font-semibold">Coleta parcial.</span>{' '}
+                      Não foi possível consultar {fontesErro.map(LABEL_PORTAL).join(', ')}.
+                      Os números refletem apenas as fontes que responderam
+                      ({resultado.diagnostico?.fontes_ok.map(LABEL_PORTAL).join(', ')}).
+                    </p>
                   </div>
                 )}
 

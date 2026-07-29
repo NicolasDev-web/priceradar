@@ -1,25 +1,22 @@
 # PriceRadar — Resumo do Projeto
 
 > Aplicação web interna da MRV para **inteligência competitiva de precificação imobiliária**.
-> Coleta anúncios de apartamentos à venda em portais concorrentes (VivaReal e Zap Imóveis),
-> calcula estatísticas de preço/m² e compara com o referencial de preço da MRV.
+> Coleta anúncios de apartamentos à venda em portais concorrentes, calcula o preço/m² praticado
+> e compara com o referencial de preço da MRV.
 
-**Data do resumo:** 09/06/2026
-**Status:** Funcional (rodando localmente), com pontos de instabilidade conhecidos.
+**Atualizado em:** 29/07/2026
+**Status:** Funcional localmente. Coleta estável e sem custo de proxy.
 
 ---
 
-## 1. Visão geral
+## 1. O que o PriceRadar entrega
 
-O PriceRadar permite ao time da MRV pesquisar empreendimentos concorrentes por **cidade, faixa de
-preço, número de quartos e bairro (opcional)**. A aplicação:
+Um número: **o preço/m² mediano praticado pelos concorrentes** num recorte (cidade, faixa de preço,
+tipologia), comparado ao referencial MRV. Tudo o mais — gráficos, histórico, Excel — existe para
+sustentar e contextualizar esse número.
 
-- Faz scraping em tempo real dos portais VivaReal e Zap Imóveis;
-- Consolida os resultados, remove duplicatas e calcula preço/m² médio, mínimo e máximo;
-- Compara cada anúncio com um **referencial de preço da MRV** (cadastrável), mostrando a variação percentual;
-- Apresenta gráficos (distribuição de preços e evolução histórica);
-- Exporta os resultados para **Excel formatado**;
-- Mantém **histórico** de buscas e usa **cache** para repetir buscas instantaneamente.
+A mediana é o número de referência, não a média: um único anúncio com área agregada desloca a média
+e não move a mediana.
 
 ---
 
@@ -28,169 +25,149 @@ preço, número de quartos e bairro (opcional)**. A aplicação:
 ```
 PrecificacaoBruninho/
 └── priceradar/
-    ├── backend/          # API Python (FastAPI)
-    │   ├── main.py                 # Endpoints da API
+    ├── backend/                    # API Python (FastAPI), porta 8002
+    │   ├── main.py                 # Endpoints
     │   ├── models.py               # Schemas Pydantic
     │   ├── scraper/
-    │   │   ├── http.py             # Helper ScraperAPI (retry + timeout)
-    │   │   ├── vivareal.py         # Scraper VivaReal (JSON-LD)
-    │   │   ├── zapimoveis.py       # Scraper Zap (JSON-LD)
-    │   │   ├── olximoveis.py       # Scraper OLX (desativado — bloqueia)
-    │   │   └── parser.py           # Extração de construtora, nome, etc.
+    │   │   ├── http.py             # Camada de acesso com escalonamento
+    │   │   ├── browser.py          # Playwright (último nível de fallback)
+    │   │   ├── parser.py           # Extração de construtora, nome, preço, área
+    │   │   ├── chavesnamao.py      # JSON-LD, acesso direto
+    │   │   ├── vivareal.py         # JSON-LD
+    │   │   ├── zapimoveis.py       # JSON-LD
+    │   │   ├── imovelweb.py        # Cards HTML
+    │   │   └── olximoveis.py       # Desligado — parser defasado
     │   ├── services/
-    │   │   ├── search.py           # Orquestração paralela dos scrapers
-    │   │   └── export.py           # Geração do Excel (openpyxl)
-    │   ├── repositories/
-    │   │   ├── busca_repo.py       # Histórico + cache de buscas
-    │   │   └── empreendimento_repo.py  # Referencial MRV + série histórica
-    │   ├── database/
-    │   │   ├── connection.py       # SQLite async + migração leve
-    │   │   └── models_db.py        # Tabelas ORM (SQLAlchemy)
-    │   └── priceradar.db           # Banco SQLite
-    └── frontend/         # SPA React (Vite + TypeScript)
-        └── src/
-            ├── App.tsx
-            ├── api/client.ts       # Cliente HTTP (axios)
-            ├── types/index.ts
-            └── components/         # SearchForm, ResultCard, KpiBar, gráficos, etc.
+    │   │   ├── search.py           # Orquestração do pipeline
+    │   │   ├── validacao.py        # Contrato de sanidade na fronteira
+    │   │   ├── deduplicador.py     # Dedup cross-portal por chave de bloqueio
+    │   │   ├── rf_refiner.py       # Imputação + blindagem de outliers
+    │   │   ├── historico_fontes.py # Taxa de sucesso por fonte
+    │   │   └── export.py           # Excel (openpyxl)
+    │   ├── repositories/           # Histórico, cache, referencial MRV
+    │   ├── database/               # SQLite async + migração leve
+    │   └── tests/                  # 46 testes (pytest)
+    └── frontend/                   # SPA React (Vite + TypeScript), porta 5173
 ```
 
-### Stack tecnológica
+### Pipeline de uma busca
+
+```
+coleta paralela (4 portais)
+  → validação de fronteira      ← descarta locação, faixa de área, tipologia errada
+  → filtro de bairro
+  → dedup por URL
+  → dedup cross-portal          ← chave de bloqueio; localização é obrigatória
+  → variação vs. referencial MRV
+  → refino (imputação + banda de outlier por tipologia)
+  → resposta + diagnóstico da coleta
+```
+
+### Stack
 
 | Camada | Tecnologias |
 |---|---|
-| **Backend** | Python, FastAPI, uvicorn, SQLAlchemy (async) + aiosqlite, Pydantic v2, httpx, BeautifulSoup4 + lxml, openpyxl |
-| **Frontend** | React 18, Vite, TypeScript, Tailwind CSS, Recharts, axios, lucide-react |
-| **Scraping** | ScraperAPI (proxy que contorna o bloqueio anti-bot dos portais) |
-| **Banco** | SQLite |
+| Backend | Python, FastAPI, uvicorn, SQLAlchemy async + aiosqlite, Pydantic v2 |
+| Coleta | curl-cffi, httpx, BeautifulSoup4 + lxml, Playwright (fallback) |
+| Refino | scikit-learn, numpy |
+| Frontend | React 18, Vite, TypeScript, Tailwind, Recharts, axios |
+| Banco | SQLite |
 
 ---
 
-## 3. Como funciona o scraping (decisão-chave)
+## 3. Como a coleta funciona
 
-Os portais (VivaReal, Zap) são SPAs Next.js protegidas por anti-bot (Cloudflare). A solução:
+### Escalonamento de acesso (`scraper/http.py`)
 
-1. **ScraperAPI** como proxy — rotaciona IPs e usa IP brasileiro (`country_code=br`).
-2. **Extração via JSON-LD** — em vez de raspar HTML com seletores CSS frágeis, lemos o bloco
-   `<script type="application/ld+json">` com `@type: ItemList`, que contém preço, área, quartos,
-   banheiros, endereço e URL de cada imóvel de forma estruturada e estável.
-3. **`render=false`** — como os dados já vêm no HTML inicial, **não** precisamos renderizar
-   JavaScript. Isso reduziu o tempo de resposta de **~55s para ~2-5s** por portal.
-
-### Formato de URL por portal
-- **VivaReal:** `/venda/{estado-por-extenso}/{cidade}/apartamento_residencial/` (ex: `ceara`, não `ce`)
-- **Zap:** `/venda/apartamentos/{estado}+{cidade}/`
-
----
-
-## 4. Funcionalidades implementadas
-
-- ✅ Busca multi-portal (VivaReal + Zap) em paralelo (`asyncio.gather`)
-- ✅ Filtro por cidade, faixa de preço e número de quartos
-- ✅ Filtro por bairro (aplicado **após** o scraping — ver problemas)
-- ✅ Extração do nome do empreendimento e da construtora a partir da descrição
-- ✅ Cálculo de preço/m² médio, mínimo e máximo
-- ✅ Referencial de preço MRV cadastrável + cálculo de variação percentual por anúncio
-- ✅ Deduplicação de anúncios por URL
-- ✅ Gráfico de distribuição de preços (com linha de referência MRV)
-- ✅ Gráfico de evolução histórica de preço/m²
-- ✅ Exportação para Excel formatado (cores condicionais, médias, congelamento de cabeçalho)
-- ✅ Histórico de buscas (persistido em SQLite)
-- ✅ **Cache de buscas** — repetir uma busca idêntica recente devolve resultado em ~0,02s
-- ✅ Identidade visual MRV (verde #0B5A42, laranja #F39200)
-
-### Ganhos de performance obtidos
-| Otimização | Antes | Depois |
-|---|---|---|
-| `render=true` → `render=false` | ~46s | ~5-8s |
-| Exportação Excel (não refaz scraping) | ~50s | ~0,06s |
-| Cache de buscas repetidas | ~8s | ~0,02s |
-
----
-
-## 5. Problemas principais e limitações
-
-### 🔴 Críticos / Riscos
-
-1. **Dependência total da ScraperAPI (instável e limitada)**
-   - O plano gratuito tem **1.000 requisições/mês** e apresenta **erros 500 intermitentes**.
-   - Cada busca consome 2 requisições (VivaReal + Zap), então o limite é de ~500 buscas/mês.
-   - Quando a ScraperAPI falha, a busca volta vazia ou parcial. Há retry (2 tentativas) e timeout
-     de 25s, mas não há fallback real.
-
-2. **Chave da ScraperAPI precisa estar protegida**
-   - A chave fica em `backend/.env` (correto), mas **deve nunca ser commitada**. Confirmar que
-     `.env` está no `.gitignore`.
-
-3. **Fragilidade do scraping**
-   - Se os portais mudarem o formato da URL ou removerem o JSON-LD, o scraping quebra.
-   - O VivaReal exige nome do estado por extenso — qualquer cidade nova precisa estar no mapa de estados.
-
-### 🟠 Funcionais
-
-4. **Filtro de bairro é pós-scraping (impreciso)**
-   - Os portais retornam 404 ao filtrar bairro pela URL, então buscamos a cidade inteira e
-     filtramos pelo texto do endereço. Como só vêm ~30 resultados por portal, **bairros com poucos
-     anúncios podem retornar vazio** mesmo existindo imóveis.
-
-5. **OLX desativado**
-   - O OLX bloqueia requisições de servidor (403). Está desligado por padrão (`HABILITAR_OLX=false`).
-     Logo, a cobertura é de apenas 2 dos 3 portais planejados.
-
-6. **Resultados limitados a ~30 por portal**
-   - O JSON-LD traz apenas a primeira página de resultados. Não há paginação implementada.
-
-7. **Qualidade da extração de construtora/empreendimento é heurística**
-   - Baseada em regex sobre a descrição. Acerta em muitos casos, mas erra em outros
-     (ex: capturar "Fortaleza" ou "Torre B" como construtora). Vários anúncios ficam sem construtora.
-
-8. **Duplicatas entre portais**
-   - O mesmo imóvel pode aparecer no VivaReal e no Zap com URLs diferentes — a deduplicação por URL
-     não os elimina (aparecem dois cards iguais).
-
-### 🟡 Técnicos / Manutenção
-
-9. **`requirements.txt` desatualizado**
-   - Ainda lista `playwright` (não é mais usado — foi abandonado por incompatibilidade com Windows).
-   - **Faltam** `sqlalchemy` e `aiosqlite`, que são usados pelo banco. Instalação limpa pode falhar.
-
-10. **Sem testes automatizados**
-    - Não há suíte de testes. Toda validação foi manual/iterativa.
-
-11. **Apenas ambiente local**
-    - Backend em `localhost:8001`, frontend em `localhost:5173`. Não há deploy nem autenticação.
-    - O `MOCK=true` permite rodar sem ScraperAPI (dados fictícios) para desenvolvimento.
-
-12. **Cidade fixa em testes**
-    - O foco atual é Fortaleza-CE. Outras cidades funcionam, mas foram pouco testadas.
-
----
-
-## 6. Configuração (variáveis de ambiente)
-
-`backend/.env`:
 ```
-MOCK=false                 # true = dados fictícios, sem ScraperAPI
-SCRAPERAPI_KEY=<chave>     # obrigatória para scraping real
-CACHE_MINUTOS=60           # validade do cache de buscas
-SCRAPER_TIMEOUT=25         # timeout por requisição (segundos)
-HABILITAR_OLX=false        # OLX desativado (bloqueia)
+1. curl-cffi (TLS de Chrome real)  → grátis, ~1s      ← resolve a maioria
+2. ScraperAPI (proxy rotativo)     → 1 crédito, ~5-25s
+3. Playwright (browser real)       → grátis, ~15-25s  ← a cargo de cada scraper
 ```
 
-`frontend/.env.local`:
-```
-VITE_API_URL=http://localhost:8001
+O ponto-chave: VivaReal, Zap e ImovelWeb **não bloqueiam por User-Agent — bloqueiam pela assinatura
+TLS/JA3**. `httpx` tem assinatura de biblioteca Python, reconhecível de imediato. `curl-cffi` replica
+a de um Chrome real, e os mesmos portais que devolviam 403 passam a devolver 200.
+
+Consequência prática: uma busca completa hoje consome **zero crédito** de proxy.
+
+### Fontes
+
+| Portal | Estratégia | Volume típico | Custo |
+|---|---|---|---|
+| zapimoveis | curl-cffi + JSON-LD, 2 págs | ~55 | 0 |
+| chavesnamao | curl-cffi + JSON-LD, 12 págs | ~40 | 0 |
+| vivareal | curl-cffi + JSON-LD, 2 págs | ~25 | 0 |
+| imovelweb | curl-cffi + cards HTML, 2 págs | ~6 | 0 |
+| olx | desligado — parser defasado (RSC) | — | — |
+| mercadolivre | desligado — só renderiza com JS | — | — |
+| quintoandar | desligado — listagem client-side | — | — |
+| netimoveis | desligado — inventário só em MG | — | — |
+
+---
+
+## 4. Resultados da busca de referência
+
+Fortaleza-CE, R$280k–500k, 2 quartos:
+
+| Métrica | 21/06 | 29/07 |
+|---|---:|---:|
+| Empreendimentos | 46 | **85** |
+| Tempo | ~120s | **7-45s** |
+| Créditos por busca | ~6 | **0** |
+| max / mediana (outlier) | 2,52 | **1,35** |
+| Anúncios de locação | 2 | **0** |
+| Anúncios com faixa de área | 8 | **0** |
+
+---
+
+## 5. Limitações conhecidas
+
+1. **Amostra, não censo.** ~85 anúncios de 4 portais não são o mercado inteiro. É indicador de
+   posicionamento, não medida exata.
+2. **Anúncio ≠ venda.** Preço anunciado tem gordura de negociação.
+3. **`construtora` fica vazia na maioria dos casos (~6%).** A lista de construtoras conhecidas foi
+   podada de termos ambíguos ("Sky", "You", "Morada Nova" — que é cidade do CE) porque geravam nome
+   errado. Preencher de verdade exige outra fonte de dados, não regex.
+4. **O campo `bairro` traz endereço de rua** em VivaReal, Zap e ImovelWeb — só o ChavesNaMão traz
+   bairro de fato. Isso limita o filtro de bairro e a dedup por localização.
+5. **KPI sobre tipologias misturadas não é acionável.** 1 quarto custa ~14.000/m² e 3 quartos
+   ~6.000/m² na mesma cidade. Buscar sem filtro de tipologia produz um número sem significado —
+   sempre filtre por quartos.
+6. **Fragilidade estrutural.** Os portais podem mudar de layout a qualquer momento. Os testes
+   detectam a quebra rápido, mas não a impedem.
+7. **Cobertura fora de Fortaleza não validada.** Cada praça nova precisa ser conferida.
+8. **Local-only.** Sem deploy, sem autenticação, sem multiusuário.
+
+---
+
+## 6. Como rodar
+
+```bash
+# Backend
+cd priceradar/backend
+python -m venv venv && venv/Scripts/activate     # Windows
+pip install -r requirements.txt
+playwright install chromium                       # só para o fallback
+cp .env.example .env                              # preencha se for usar ScraperAPI
+uvicorn main:app --port 8002
+
+# Frontend
+cd priceradar/frontend
+npm install && npm run dev
+
+# Testes
+cd priceradar/backend && python -m pytest tests/ -q
 ```
 
 ---
 
-## 7. Próximos passos sugeridos (priorizados)
+## 7. Próximos passos
 
-1. **Corrigir `requirements.txt`** — remover `playwright`, adicionar `sqlalchemy` e `aiosqlite`. *(rápido, importante)*
-2. **Avaliar plano pago da ScraperAPI** ou alternativa — resolve instabilidade e limite de requisições.
-3. **Melhorar deduplicação cross-portal** — comparar por nome+área+preço, não só URL.
-4. **Reforçar extração de construtora** — lista de construtoras conhecidas + validação.
-5. **Paginação** — buscar mais de 30 resultados por portal.
-6. **Testes automatizados** — ao menos para os parsers de JSON-LD.
-7. **Deploy + autenticação** — se for uso por mais pessoas do time.
-```
+1. **Definir o deploy** — servidor interno vs. cloud. É o que falta para "entregar ao comercial".
+2. **Autenticação**, se for multiusuário.
+3. **Corrigir o campo `bairro`** — separar logradouro de bairro nos parsers; destrava o filtro de
+   bairro e melhora a dedup.
+4. **KPI por tipologia** — quebrar o preço/m² por nº de quartos na interface.
+5. **Reescrever o parser do OLX** (payload RSC) — o acesso já está destravado.
+6. **Validar novas praças** antes de prometê-las ao time.

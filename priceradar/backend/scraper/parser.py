@@ -64,20 +64,27 @@ def calcular_preco_m2(preco: float, area: float) -> float:
 # Usada tanto para busca literal quanto para normalização do resultado.
 _CONSTRUTORAS_CONHECIDAS: list[str] = [
     # Nacionais
-    "MRV", "Cyrela", "Direcional", "Tenda", "Even", "Tegra", "Cury", "PDG",
+    "MRV", "Cyrela", "Direcional", "Tenda", "Tegra", "Cury", "PDG",
     "Gafisa", "Rossi", "EzTec", "Mitre", "Helbor", "Lavvi", "Plano&Plano",
-    "João Fortes", "Bairro Novo", "Moura Dubeux", "Patrimar", "OAS", "EZTEC",
-    "RNI", "You", "Vitacon", "Kallas", "Brookfield", "Inpar",
+    "João Fortes", "Moura Dubeux", "Patrimar", "OAS", "EZTEC",
+    "RNI", "Vitacon", "Kallas", "Brookfield", "Inpar",
     # Nordeste / Ceará
-    "Marquise", "HM Engenharia", "Construtora Marquise", "Thera",
-    "Grupo Veredas", "CBL", "Porte Engenharia", "NV Construtora", "Norcon",
-    "GEF", "Irmãos Almeida", "Capuche", "MDL", "Concret", "Colinas",
-    "Via Empreendimentos", "Construtora Colinas", "Aqwa", "Grupo Netos",
-    "Construtora Barbosa Mello", "Diagonal", "Dimensão", "Cidade Verde",
-    "G3 Construtora", "Conenge", "Habib", "Plaenge", "Habitasul",
-    # Outros estados do Nordeste mas presentes em CE
-    "Morada Nova", "Setin", "Sky",
+    "Marquise", "HM Engenharia", "Construtora Marquise",
+    "Grupo Veredas", "Porte Engenharia", "NV Construtora", "Norcon",
+    "Irmãos Almeida", "Capuche", "MDL", "Concret",
+    "Via Empreendimentos", "Construtora Colinas", "Grupo Netos",
+    "Construtora Barbosa Mello", "Cidade Verde",
+    "G3 Construtora", "Conenge", "Plaenge", "Habitasul", "Setin",
 ]
+
+# Removidos por gerarem falso positivo em texto livre de anúncio:
+#   "Sky", "You", "Thera", "Aqwa"     — palavras comuns em nome de empreendimento
+#   "Diagonal", "Dimensão", "Colinas" — substantivos comuns em descrição
+#   "Habib", "CBL", "GEF", "Even"     — siglas/sobrenomes ambíguos
+#   "Morada Nova"                      — é uma cidade do Ceará, não construtora
+#   "Bairro Novo"                      — expressão genérica
+# Regra: melhor o campo vazio que preenchido errado. Um "Sky" errado numa
+# planilha entregue ao comercial custa mais do que uma célula em branco.
 
 # Regex de busca para cada construtora (ordem: mais específica primeiro)
 _RE_CONSTRUTORAS = re.compile(
@@ -86,8 +93,10 @@ _RE_CONSTRUTORAS = re.compile(
 )
 
 # Prefixos institucionais que introduzem o nome da construtora
+# "Imobiliária" saiu da lista: imobiliária é quem anuncia, não quem constrói —
+# capturá-la enchia o campo `construtora` com nome de corretora.
 _RE_PREFIXO_CONSTRUTORA = re.compile(
-    r'(?:Construtora|Incorporadora|Imobili[áa]ria|Empreendimentos?)\s+'
+    r'(?:Construtora|Incorporadora)\s+'
     r'([A-Z][A-Za-zÀ-ú&\s]{2,30}?)(?=\s*[.,\-\n(]|\s{2}|\s*$)',
     re.IGNORECASE,
 )
@@ -130,7 +139,7 @@ def extrair_construtora(nome_anuncio: str, descricao: str | None) -> str | None:
         if m:
             nome = m.group(1).strip()
             # re.IGNORECASE contamina [A-Z] — verificar maiúscula em Python
-            if nome and nome[0].isupper():
+            if nome and nome[0].isupper() and not _RE_RAZAO_SOCIAL.search(nome):
                 primeira = nome.split()[0].lower()
                 if primeira not in _PRIMEIRAS_PALAVRAS_INVALIDAS and len(nome) > 2:
                     return _normalizar_construtora(nome)
@@ -158,15 +167,29 @@ def _normalizar_construtora(nome: str) -> str:
 # Prefixos típicos de nomes de empreendimentos imobiliários.
 # \b garante que "Cond." não matcheia "condicionado".
 # [ \t] em vez de \s para não capturar quebras de linha no nome.
+# Prefixos que identificam um empreendimento com segurança razoável.
+# Removidos os que são acidente geográfico ou substantivo comum — "Parque",
+# "Bosque", "Morada", "Jardins", "Reserva", "Clube" capturavam trechos como
+# "Parque Estadual do Cocó" (um parque citado na descrição) e "Morada Nova"
+# (cidade do Ceará) como se fossem nome de empreendimento.
 _RE_EMPREENDIMENTO = re.compile(
-    r'\b(?:Resid[eê]ncial|Cond\.\s+|Condom[íi]nio\s+|Parque\s+|Jardins?\s+d[oa]?\s*|'
-    r'Ed[íi]f[íi]cio\s+|Torre\s+|Village\s+|Villa\s+|Vila\s+|'
-    r'Gran\s+|Grand\s+|Reserva\s+|Bosque\s+|Portal\s+d[oa]?\s*|'
-    r'Mirante\s+|Splendor\s+|Solaris\s+|Veredas\s+|'
-    r'Clube\s+|Morada\s+|Vivace\s+|Spazio\s+|Excellence\s+|Unique\s+)'
+    r'\b(?:Resid[eê]ncial\s+|Cond\.\s+|Condom[íi]nio\s+|'
+    r'Ed[íi]f[íi]cio\s+|Torre\s+|Village\s+|Villa\s+|'
+    r'Splendor\s+|Solaris\s+|Vivace\s+|Spazio\s+)'
     r'([A-ZÀ-Ú][A-Za-zÀ-ú0-9 \t&]{2,45})',
     re.IGNORECASE,
 )
+
+# Trechos que nunca são nome de empreendimento, mesmo casando com um prefixo.
+_RE_NAO_E_EMPREENDIMENTO = re.compile(
+    r'\b(estadual|municipal|nacional|federal|ecol[óo]gico|aqu[áa]tico|'
+    r'shopping|hospital|universidade|aeroporto|terminal)\b',
+    re.IGNORECASE,
+)
+
+# Sufixos societários: sinal de que se capturou uma razão social de
+# imobiliária/anunciante, não a construtora do empreendimento.
+_RE_RAZAO_SOCIAL = re.compile(r'\b(ltda|me|epp|eireli|s/?a)\b\.?\s*$', re.IGNORECASE)
 
 # Nome de empreendimento que parece ser apenas um preço monetário
 _RE_PARECE_PRECO = re.compile(
@@ -204,6 +227,9 @@ def extrair_nome_empreendimento(descricao: str | None) -> str | None:
         if not captured or not captured[0].isupper():
             m = None  # falso positivo; deixa cair para a segunda prioridade
 
+    if m and _RE_NAO_E_EMPREENDIMENTO.search(m.group(0)):
+        m = None  # equipamento urbano citado na descrição, não empreendimento
+
     if m:
         nome = m.group(0).strip()
         # Remove parte descritiva após separador (ex: "Gran Club - Apartamento 2 quartos")
@@ -219,27 +245,13 @@ def extrair_nome_empreendimento(descricao: str | None) -> str | None:
         if 5 < len(nome) < 80:
             return nome
 
-    # Prioridade 2: primeira linha curta que não pareça descrição genérica
-    first = texto.split('\n')[0].strip()
-
-    # Descarta se parece preço
-    if _RE_PARECE_PRECO.match(first):
-        return None
-
-    # Descarta se começa com marcador genérico
-    if _RE_INICIO_GENERICO.match(first):
-        return None
-
-    # Descarta se tem caracteres típicos de descrição (encoding quebrado incluso)
-    if re.search(r'[mÂ²°]', first):
-        return None
-
-    # Exige inicial maiúscula para ser um nome de empreendimento
-    if not first or not first[0].isupper():
-        return None
-
-    if 5 < len(first) < 70:
-        # Remove qualquer newline que tenha escapado
-        return first.replace('\n', ' ').strip()
-
+    # Sem padrão explícito de empreendimento, devolve None.
+    #
+    # Havia aqui um fallback que usava a primeira linha da descrição. Ele
+    # produzia nomes que não são empreendimento — "LOCALIZAÇÃO PRIVILEGIADA",
+    # "Parque Estadual do Cocó" — e inflava artificialmente a métrica de
+    # preenchimento: o campo parecia cheio, mas com lixo.
+    #
+    # Melhor vazio que errado: o comercial consegue trabalhar com uma célula
+    # em branco, não com um nome inventado.
     return None
