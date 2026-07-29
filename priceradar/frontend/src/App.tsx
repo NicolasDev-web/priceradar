@@ -25,6 +25,11 @@ const PORTAL_CONFIG: Record<string, { label: string; color: string }> = {
 
 const LABEL_PORTAL = (p: string) => PORTAL_CONFIG[p]?.label ?? p
 
+// Abaixo disso a mediana oscila demais com um anúncio a mais ou a menos.
+// Cidades do interior costumam cair aqui — o aviso evita que um número frágil
+// seja levado para uma reunião como se fosse referência de mercado.
+const MINIMO_AMOSTRA_CONFIAVEL = 15
+
 export default function App() {
   const [loading, setLoading] = useState(false)
   const [exportando, setExportando] = useState(false)
@@ -47,8 +52,20 @@ export default function App() {
       const dados = await buscarConcorrentes(params, forcar)
       setResultado(dados)
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Erro desconhecido'
-      setErro(`Não foi possível buscar os dados. Verifique se o servidor está rodando.\n${msg}`)
+      // 422 = a API recusou os filtros (ex.: cidade sem UF). Mostrar o motivo
+      // real, não "verifique se o servidor está rodando" — que manda o usuário
+      // investigar a coisa errada.
+      const resp = (e as { response?: { status?: number; data?: { detail?: unknown } } }).response
+      const detalhe = resp?.data?.detail
+      if (resp?.status === 422 && Array.isArray(detalhe)) {
+        const motivos = detalhe
+          .map((d: { msg?: string }) => (d.msg ?? '').replace(/^Value error,\s*/, ''))
+          .filter(Boolean)
+        setErro(motivos.join('\n') || 'Filtros inválidos.')
+      } else {
+        const msg = e instanceof Error ? e.message : 'Erro desconhecido'
+        setErro(`Não foi possível buscar os dados. Verifique se o servidor está rodando.\n${msg}`)
+      }
     } finally {
       setLoading(false)
     }
@@ -240,6 +257,20 @@ export default function App() {
                       Não foi possível consultar {fontesErro.map(LABEL_PORTAL).join(', ')}.
                       Os números refletem apenas as fontes que responderam
                       ({resultado.diagnostico?.fontes_ok.map(LABEL_PORTAL).join(', ')}).
+                    </p>
+                  </div>
+                )}
+
+                {/* Amostra pequena: em cidades do interior os portais têm pouco
+                    estoque. A mediana de 5 anúncios não sustenta uma decisão de
+                    preço, e o número sozinho não deixa isso evidente. */}
+                {resultado.total < MINIMO_AMOSTRA_CONFIAVEL && (
+                  <div className="flex items-start gap-2.5 bg-amber-950/40 border border-amber-800/40 rounded-card px-4 py-3 mb-4">
+                    <AlertTriangle size={15} className="text-amber-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-amber-200/90 leading-relaxed">
+                      <span className="font-semibold">Amostra pequena ({resultado.total} anúncios).</span>{' '}
+                      Use como indicativo, não como referência de preço. Amplie a faixa
+                      de preço ou remova o filtro de tipologia para uma base maior.
                     </p>
                   </div>
                 )}

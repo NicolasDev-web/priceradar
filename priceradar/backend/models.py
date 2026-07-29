@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class Empreendimento(BaseModel):
@@ -42,12 +42,39 @@ class DiagnosticoColeta(BaseModel):
     descartados_por_motivo: dict[str, int] = {}
 
 
+_UFS = {
+    "ac", "al", "ap", "am", "ba", "ce", "df", "es", "go", "ma", "mt", "ms",
+    "mg", "pa", "pb", "pr", "pe", "pi", "rj", "rn", "rs", "ro", "rr", "sc",
+    "sp", "se", "to",
+}
+
+
 class BuscaRequest(BaseModel):
     cidade: str
     preco_min: float
     preco_max: float
     quartos: int | None = None
     bairro: str | None = None
+
+    @field_validator("cidade")
+    @classmethod
+    def exigir_estado(cls, v: str) -> str:
+        """
+        A cidade precisa vir como "Cidade, UF".
+
+        Sem o estado o código assumia SP silenciosamente: buscar "Fortaleza"
+        devolvia dados de Fortaleza/SP. Numa ferramenta de precificação, dado
+        da praça errada apresentado como certo é pior que erro na cara.
+        """
+        partes = [p.strip() for p in v.split(",")]
+        if len(partes) < 2 or not partes[0]:
+            raise ValueError(
+                'Informe a cidade com o estado, no formato "Cidade, UF". Ex: "Fortaleza, CE"'
+            )
+        uf = partes[1].lower()
+        if uf not in _UFS:
+            raise ValueError(f'"{partes[1]}" não é uma UF válida. Use a sigla de 2 letras, ex: "Fortaleza, CE"')
+        return v
 
 
 class BuscaResponse(BaseModel):

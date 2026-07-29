@@ -40,13 +40,14 @@ _HEADERS = {
     "Accept-Language": "pt-BR,pt;q=0.9",
 }
 
-# Mapa estado → sigla para construir a URL de busca
-_ESTADO_URL = {
-    "sp": "sp-sao-paulo", "rj": "rj-rio-de-janeiro", "mg": "mg-belo-horizonte",
-    "ba": "ba-salvador", "ce": "ce-fortaleza", "pe": "pe-recife",
-    "rs": "rs-porto-alegre", "pr": "pr-curitiba", "go": "go-goiania",
-    "df": "df-brasilia",
-}
+# Não existe mapa de cidades aqui, e não deve existir: o padrão da URL é
+# sempre `{sigla-do-estado}-{cidade}`.
+#
+# Havia um dicionário mapeando ESTADO → CAPITAL, aplicado a qualquer busca
+# daquele estado. Buscar "Caucaia, CE" montava a URL de Fortaleza e devolvia
+# 70 anúncios — nenhum de Caucaia, sem erro nenhum. O mesmo com Campinas,
+# que virava São Paulo. Medido em 29/07/2026: 0 de 70 anúncios da cidade
+# pedida. É o pior tipo de falha: dado de outra praça apresentado como certo.
 
 
 def _sem_acento(texto: str) -> str:
@@ -63,8 +64,8 @@ def _build_url(cidade: str, estado: str, preco_min: float, preco_max: float, qua
     Faixa de preço não tem filtro server-side em nenhum formato conhecido;
     é aplicada no parsing.
     """
-    cidade_slug = _sem_acento(cidade).lower().replace(" ", "-")
-    estado_cidade = _ESTADO_URL.get(estado.lower(), f"{estado.lower()}-{cidade_slug}")
+    cidade_slug = _sem_acento(cidade).lower().strip().replace(" ", "-")
+    estado_cidade = f"{_sem_acento(estado).lower().strip()}-{cidade_slug}"
     url = f"{CHAVESNAMAO_BASE}/apartamentos-a-venda/{estado_cidade}/"
     if quartos:
         url += f"{int(quartos)}-quartos/"

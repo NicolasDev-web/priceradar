@@ -48,15 +48,22 @@ export function SearchForm({ onBuscar, loading }: Props) {
 
         {/* Cidade */}
         <div className="lg:col-span-2">
-          <label className={labelBase}>Cidade</label>
+          <label className={labelBase}>
+            Cidade{' '}
+            <span className="normal-case text-mrv-text-dim font-normal">(com a UF)</span>
+          </label>
           <input
             type="text"
             value={cidade}
             onChange={e => setCidade(e.target.value)}
-            placeholder="Ex: Salvador, BA"
+            placeholder="Ex: Campinas, SP"
             required
             className={inputBase}
           />
+          {/* Sem a UF a busca é ambígua: há Fortaleza no CE e em SP. */}
+          <p className="text-[10px] text-mrv-text-dim mt-1">
+            Qualquer cidade do país. Informe sempre a sigla do estado.
+          </p>
         </div>
 
         {/* Bairro */}

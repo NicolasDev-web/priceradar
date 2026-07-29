@@ -24,7 +24,10 @@ VIVAREAL_BASE_URL = os.getenv("VIVAREAL_BASE_URL", "https://www.vivareal.com.br"
 # 2 paginas: a 3a raramente traz item novo apos dedup e custa 1 credito.
 MAX_PAGINAS = int(os.getenv("VIVAREAL_MAX_PAGINAS", "2"))
 
-# Mapa de siglas de estado para nome por extenso (formato VivaReal)
+# O VivaReal usa o nome do estado por extenso no path — com uma exceção:
+# São Paulo usa a sigla. `/venda/sao-paulo/campinas/` devolve 404, enquanto
+# `/venda/sp/campinas/` funciona (provável colisão entre o estado e a capital
+# homônima). Medido em 29/07/2026 em 9 cidades de 7 estados; SP é o único caso.
 _ESTADO_SLUG = {
     "ac": "acre", "al": "alagoas", "ap": "amapa", "am": "amazonas",
     "ba": "bahia", "ce": "ceara", "df": "distrito-federal", "es": "espirito-santo",
@@ -33,14 +36,24 @@ _ESTADO_SLUG = {
     "pb": "paraiba", "pr": "parana", "pe": "pernambuco", "pi": "piaui",
     "rj": "rio-de-janeiro", "rn": "rio-grande-do-norte",
     "rs": "rio-grande-do-sul", "ro": "rondonia", "rr": "roraima",
-    "sc": "santa-catarina", "sp": "sao-paulo", "se": "sergipe", "to": "tocantins",
+    "sc": "santa-catarina", "sp": "sp", "se": "sergipe", "to": "tocantins",
 }
+
+# Forma alternativa do estado, tentada quando a primeira devolve 404. Evita
+# que uma exceção não mapeada zere a fonte inteira numa cidade nova.
+_ESTADO_ALTERNATIVO = {"sp": "sao-paulo"}
 
 
 def _extrair_estado_cidade(cidade_str: str) -> tuple[str, str]:
+    """
+    Devolve (estado_slug, cidade_slug) prontos para a URL.
+
+    O acento precisa sair: `/venda/goias/goiânia/` devolve 404 e
+    `/venda/goias/goiania/` devolve 200.
+    """
     partes = cidade_str.strip().split(',')
-    cidade = partes[0].strip().lower().replace(' ', '-')
-    sigla = partes[1].strip().lower() if len(partes) > 1 else 'sp'
+    cidade = normalizar_cidade(partes[0]).replace(' ', '-')
+    sigla = normalizar_cidade(partes[1]) if len(partes) > 1 else 'sp'
     estado = _ESTADO_SLUG.get(sigla, sigla)
     return estado, cidade
 
@@ -163,8 +176,22 @@ async def _fetch_pagina_vivareal(
 ) -> list[dict]:
     url = build_vivareal_url(cidade_slug, estado, preco_min, preco_max, quartos, bairro, pagina)
     html = await buscar_html(url, f"VivaReal p{pagina}")
+
+    # O path do estado tem exceções (SP usa sigla, o resto usa o nome por
+    # extenso). Se a primeira forma não trouxe nada, tenta a alternativa antes
+    # de desistir — assim uma cidade nova não zera a fonte por causa do mapa.
     if html is None:
-        logger.info(f"VivaReal p{pagina}: ScraperAPI falhou — tentando Playwright")
+        alternativo = _ESTADO_ALTERNATIVO.get(estado) or next(
+            (sigla for sigla, nome in _ESTADO_SLUG.items() if nome == estado and sigla != estado),
+            None,
+        )
+        if alternativo:
+            logger.info(f"VivaReal p{pagina}: tentando estado alternativo '{alternativo}'")
+            url_alt = build_vivareal_url(cidade_slug, alternativo, preco_min, preco_max, quartos, bairro, pagina)
+            html = await buscar_html(url_alt, f"VivaReal p{pagina} (alt)")
+
+    if html is None:
+        logger.info(f"VivaReal p{pagina}: acesso falhou — tentando Playwright")
         html = await buscar_html_playwright(url, f"VivaReal p{pagina}")
     if html is None:
         return []
