@@ -34,6 +34,8 @@ import logging
 import os
 import pathlib
 import re
+import tempfile
+import threading
 import unicodedata
 
 from scraper.http import buscar_html
@@ -59,6 +61,10 @@ _NEIGHBORHOOD = re.compile(r'"neighborhood":"([^"]*)"')
 _NAO_E_BAIRRO = re.compile(r"^[áa]rea rural\b", re.IGNORECASE)
 
 _cache: dict[str, list[str]] = {}
+
+# Toda busca agora escreve neste arquivo. Duas buscas simultâneas fariam
+# read-modify-write no mesmo JSON e a última apagaria os bairros da primeira.
+_LOCK_CACHE = threading.Lock()
 
 
 def _normalizar(texto: str) -> str:
@@ -103,7 +109,7 @@ def _unir(*fontes: list[str]) -> list[str]:
                 continue
             chave = _normalizar(nome)
             atual = escolhido.get(chave)
-            if atual is None or (_normalizar(atual) == atual and nome != _normalizar(nome)):
+            if atual is None or (not _tem_acento(atual) and _tem_acento(nome)):
                 escolhido[chave] = nome
     return sorted(escolhido.values())
 
@@ -118,11 +124,22 @@ def _carregar_cache() -> dict[str, list[str]]:
 
 
 def _salvar_cache(dados: dict[str, list[str]]) -> None:
+    """Grava num temporário e renomeia — `os.replace` é atômico, `write_text` não.
+
+    Sem isso, um crash no meio da escrita deixa JSON truncado; `_carregar_cache`
+    engole a exceção e devolve `{}`, apagando em silêncio tudo o que a máquina
+    acumulou desde sempre.
+    """
     try:
         _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _CACHE_PATH.write_text(
-            json.dumps(dados, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8"
-        )
+        fd, temporario = tempfile.mkstemp(dir=str(_CACHE_PATH.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(dados, f, ensure_ascii=False, indent=1, sort_keys=True)
+            os.replace(temporario, _CACHE_PATH)
+        except Exception:
+            pathlib.Path(temporario).unlink(missing_ok=True)
+            raise
     except Exception as e:
         logger.warning(f"Não foi possível salvar o cache de bairros: {e}")
 
@@ -139,12 +156,13 @@ def registrar_bairros_vistos(cidade_str: str, bairros: list[str]) -> None:
         return
 
     chave = cidade_str.strip().lower()
-    disco = _carregar_cache()
-    unido = _unir(disco.get(chave, []), _cache.get(chave, []), nomes)
-    if unido != disco.get(chave):
-        disco[chave] = unido
-        _salvar_cache(disco)
-    _cache[chave] = unido
+    with _LOCK_CACHE:
+        disco = _carregar_cache()
+        unido = _unir(disco.get(chave, []), _cache.get(chave, []), nomes)
+        if unido != disco.get(chave):
+            disco[chave] = unido
+            _salvar_cache(disco)
+        _cache[chave] = unido
 
 
 async def listar_bairros(cidade_str: str) -> list[str]:
@@ -188,12 +206,17 @@ async def listar_bairros(cidade_str: str) -> list[str]:
         slugs.update(padrao_slug.findall(html))
         do_rsc.update(n for n in _NEIGHBORHOOD.findall(_payload_rsc(html)) if n)
 
+    # O RSC vem primeiro: entre "Cocó" e "Coco", _unir fica com a acentuada.
     bairros = _unir(sorted(do_rsc), [_slug_para_nome(s) for s in sorted(slugs)])
     if bairros:
+        with _LOCK_CACHE:
+            disco = _carregar_cache()
+            # Preserva o que as buscas já registraram: a varredura vê 4 páginas,
+            # o histórico vê tudo o que a máquina já coletou naquela cidade.
+            bairros = _unir(disco.get(chave, []), bairros)
+            disco[chave] = bairros
+            _salvar_cache(disco)
         _cache[chave] = bairros
-        disco = _carregar_cache()
-        disco[chave] = bairros
-        _salvar_cache(disco)
 
     logger.info(
         f"Bairros de {cidade_str}: {len(bairros)} "

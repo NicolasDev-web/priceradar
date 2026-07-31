@@ -44,14 +44,21 @@ logger = logging.getLogger(__name__)
 _CHUNK = re.compile(r'self\.__next_f\.push\(\[1,\s*"(.*?)"\]\)', re.S)
 
 # href → ... → neighborhood → ... → isApproximateLocation → ... → coordinates.
-# As janelas são limitadas de propósito: sem o teto, um anúncio sem coordenada
-# casaria com a coordenada do anúncio seguinte e plotaria o pin no lugar errado.
+#
+# `_ATE_PROX` é um ponto que se recusa a atravessar o início do próximo anúncio.
+# Só o teto numérico das janelas não bastava: ele reduz a chance de um anúncio
+# sem coordenada casar com a do SEGUINTE, mas basta o próximo começar dentro de
+# 300 caracteres para o pin ir parar no lugar errado — e com aparência de
+# coordenada exata, que é o pior jeito de errar. Com o token temperado a
+# garantia é estrutural, e os tetos ficam como limite de custo da varredura.
 # `isApproximateLocation` é opcional — nem todo anúncio traz.
+_ATE_PROX = r'(?:(?!"href":"https://).)'
+
 _ANUNCIO = re.compile(
-    r'"href":"(?P<href>https://[^"]+)".{0,600}?'
+    r'"href":"(?P<href>https://[^"]+)"' + _ATE_PROX + r'{0,600}?'
     r'"neighborhood":"(?P<bairro>[^"]*)"'
-    r'(?:.{0,200}?"isApproximateLocation":(?P<aproximada>true|false))?'
-    r'.{0,300}?"coordinates":\{"latitude":(?P<lat>-?\d+\.?\d*),'
+    r'(?:' + _ATE_PROX + r'{0,200}?"isApproximateLocation":(?P<aproximada>true|false))?'
+    + _ATE_PROX + r'{0,300}?"coordinates":\{"latitude":(?P<lat>-?\d+\.?\d*),'
     r'"longitude":(?P<lng>-?\d+\.?\d*)\}',
     re.S,
 )

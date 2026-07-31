@@ -17,6 +17,7 @@ from scraper.olximoveis import scrape_olximoveis
 from scraper.quintoandar import scrape_quintoandar
 from scraper.vivareal import scrape_vivareal
 from scraper.zapimoveis import scrape_zapimoveis
+from services.bairros import registrar_bairros_vistos
 from services.deduplicador import deduplicar_cross_portal
 from services.geo import aplicar_centroide_bairro
 from services.historico_fontes import ordenar_fontes_por_prioridade, registrar_resultado
@@ -47,6 +48,29 @@ DEDUP_CROSS_PORTAL_HABILITADO = os.getenv("HABILITAR_DEDUP_CROSS_PORTAL", "true"
 def _normalizar(texto: str) -> str:
     nfkd = unicodedata.normalize('NFKD', texto)
     return ''.join(c for c in nfkd if not unicodedata.combining(c)).lower().strip()
+
+
+# Origens em que o bairro veio ESTRUTURADO do portal. aplicar_localizacao()
+# grava `origem_coordenada` e `bairro` na mesma passagem, então esses dois
+# valores são exatamente "este nome veio do payload". O bairro dos demais
+# anúncios é adivinhado do slug da URL — ~83% de acerto e sempre sem acento —
+# e a lista de sugestões não deve herdar esse palpite.
+_ORIGENS_COM_BAIRRO_DO_PORTAL = {'exata', 'aproximada_portal'}
+
+
+def bairros_para_registrar(itens: list[dict]) -> list[str]:
+    """Bairros confiáveis desta busca, sem repetir, ignorando acento e caixa."""
+    vistos: set[str] = set()
+    nomes: list[str] = []
+    for item in itens:
+        if item.get('origem_coordenada') not in _ORIGENS_COM_BAIRRO_DO_PORTAL:
+            continue
+        nome = (item.get('bairro') or '').strip()
+        chave = _normalizar(nome)
+        if nome and chave not in vistos:
+            vistos.add(chave)
+            nomes.append(nome)
+    return nomes
 
 
 def extrair_cidade_estado(cidade_str: str) -> tuple[str, str]:
@@ -292,6 +316,20 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
     # Posiciona pelo centro do bairro quem o portal não localizou. Depois do
     # refino, para que o centroide não seja calculado sobre outlier removido.
     sem_localizacao = aplicar_centroide_bairro(raw_unicos)
+
+    # Alimenta a sugestão de bairros com o que esta busca de fato encontrou: o
+    # que a coleta viu é, por definição, bairro com oferta. I/O de disco vai
+    # para uma thread — no event loop travaria a rota. Falhar aqui não pode
+    # custar a busca; a sugestão é conveniência.
+    # Sem MOCK: _gerar_mock_data inventa Pituba e Pinheiros para qualquer
+    # cidade, e isso iria para o disco de forma permanente.
+    if not MOCK_MODE:
+        try:
+            nomes = bairros_para_registrar(raw_unicos)
+            if nomes:
+                await asyncio.to_thread(registrar_bairros_vistos, request.cidade, nomes)
+        except Exception as e:
+            logger.debug(f"Bairros vistos: não foi possível registrar: {e}")
 
     # Construir Empreendimentos
     empreendimentos: list[Empreendimento] = []
