@@ -19,7 +19,10 @@ function semAcento(texto: string): string {
   return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 }
 
-const MAX_SUGESTOES = 8
+const MAX_SUGESTOES_CIDADE = 8
+// Bairro precisa de mais: uma cidade grande passa de 50 bairros com oferta, e
+// 8 linhas escondem justamente o bairro menos óbvio que se está procurando.
+const MAX_SUGESTOES_BAIRRO = 12
 
 const inputBase =
   'w-full bg-mrv-base border border-mrv-border rounded-card px-4 py-2.5 text-sm text-mrv-text placeholder-mrv-text-dim ' +
@@ -62,15 +65,27 @@ export function SearchForm({ onBuscar, loading }: Props) {
     return bairrosDaCidade
       .filter(b => !jaEscolhidos.has(semAcento(b)))
       .filter(b => !termo || semAcento(b).includes(termo))
-      .slice(0, MAX_SUGESTOES)
+      .slice(0, MAX_SUGESTOES_BAIRRO)
   }, [bairrosDaCidade, bairroDigitando, bairros])
 
   // Ao focar sem ter digitado nada, mostra as maiores cidades — a lista já
   // vem ordenada por população, então são as praças mais prováveis.
+  //
+  // Prefixo primeiro, substring depois: só `startsWith` faria "andre" não
+  // achar "Santo André" e "conquista" não achar "Vitória da Conquista". Só
+  // `includes` afundaria a cidade certa sob homônimos parciais. As duas
+  // partições mantêm a ordem por população dentro de si.
   const sugestoes = useMemo(() => {
     const termo = semAcento(cidade.split(',')[0])
-    if (!termo) return CIDADES.slice(0, MAX_SUGESTOES)
-    return CIDADES.filter(([, , busca]) => busca.startsWith(termo)).slice(0, MAX_SUGESTOES)
+    if (!termo) return CIDADES.slice(0, MAX_SUGESTOES_CIDADE)
+    const comecam: typeof CIDADES[number][] = []
+    const contem: typeof CIDADES[number][] = []
+    for (const c of CIDADES) {
+      if (c[2].startsWith(termo)) comecam.push(c)
+      else if (c[2].includes(termo)) contem.push(c)
+      if (comecam.length >= MAX_SUGESTOES_CIDADE) break
+    }
+    return [...comecam, ...contem].slice(0, MAX_SUGESTOES_CIDADE)
   }, [cidade])
 
   function parseMoeda(s: string): number {
@@ -157,7 +172,7 @@ export function SearchForm({ onBuscar, loading }: Props) {
             </ul>
           )}
           <p className="text-[10px] text-mrv-text-dim mt-1">
-            Qualquer cidade do país — a lista sugere as maiores.
+            Municípios do Nordeste — o campo aceita qualquer cidade digitada.
           </p>
         </div>
 
