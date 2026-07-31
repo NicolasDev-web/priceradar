@@ -1,5 +1,6 @@
 import { Bath, BedDouble, Car, ExternalLink, MapPin } from 'lucide-react'
 import type { Empreendimento } from '../types'
+import { desvioPercentual, faixaPorDesvio, rotuloDesvio } from '../utils/posicionamento'
 import { VariacaoMRVBadge } from './VariacaoMRVBadge'
 
 interface Props {
@@ -11,50 +12,11 @@ function formatarMoeda(valor: number): string {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
-/** Retorna cor e label baseados no desvio percentual em relação à média */
-function calcularPosicionamento(preco_m2: number, media: number): {
-  pct: number
-  label: string
-  barColor: string        // cor da barra lateral (Tailwind bg)
-  pctColor: string        // cor do texto de variação
-  pctBg: string           // fundo do badge de variação
-} {
-  const pct = ((preco_m2 - media) / media) * 100
-  if (pct < -8) return {
-    pct,
-    label: `${pct.toFixed(1)}%`,
-    barColor: 'bg-emerald-500',
-    pctColor: 'text-emerald-400',
-    pctBg: 'bg-emerald-950/70 border border-emerald-800/50',
-  }
-  if (pct < -2) return {
-    pct,
-    label: `${pct.toFixed(1)}%`,
-    barColor: 'bg-emerald-700',
-    pctColor: 'text-emerald-500',
-    pctBg: 'bg-emerald-950/50 border border-emerald-900/50',
-  }
-  if (pct <= 2) return {
-    pct,
-    label: `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`,
-    barColor: 'bg-amber-500',
-    pctColor: 'text-amber-400',
-    pctBg: 'bg-amber-950/70 border border-amber-800/50',
-  }
-  if (pct <= 8) return {
-    pct,
-    label: `+${pct.toFixed(1)}%`,
-    barColor: 'bg-orange-600',
-    pctColor: 'text-orange-400',
-    pctBg: 'bg-orange-950/60 border border-orange-800/50',
-  }
-  return {
-    pct,
-    label: `+${pct.toFixed(1)}%`,
-    barColor: 'bg-red-500',
-    pctColor: 'text-red-400',
-    pctBg: 'bg-red-950/60 border border-red-800/50',
-  }
+/** Cor e label do desvio em relação à média. As faixas moram em
+ *  `utils/posicionamento` porque o mapa pinta os pinos com as mesmas. */
+function calcularPosicionamento(preco_m2: number, media: number) {
+  const pct = desvioPercentual(preco_m2, media)
+  return { pct, label: rotuloDesvio(pct), ...faixaPorDesvio(pct) }
 }
 
 // Torre x bloco. "Sem info" é ausência de DADO, não de elevador — nenhum

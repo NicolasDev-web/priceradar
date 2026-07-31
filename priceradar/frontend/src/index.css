@@ -48,3 +48,58 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #0B5A42;
 }
+
+/* ------------------------------------------------------------------
+   Leaflet no tema dark.
+   O componente Mapa importa o CSS do Leaflet, que traz popup branco,
+   controles brancos e fundo cinza — tudo berrando sobre o #070F0B do app.
+   ------------------------------------------------------------------ */
+.leaflet-container {
+  background: #070F0B;   /* buraco entre tiles não pisca cinza claro */
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: #0D1F17;
+  color: #DFF0E8;
+  border: 1px solid #1A3D2C;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+}
+.leaflet-popup-content-wrapper { border-radius: 6px; }
+.leaflet-popup-content { margin: 10px 12px; font-size: 12px; line-height: 1.45; }
+.leaflet-popup-close-button { color: #6B9E88 !important; }
+.leaflet-popup-close-button:hover { color: #DFF0E8 !important; }
+
+.leaflet-bar a,
+.leaflet-bar a:hover {
+  background: #0D1F17;
+  color: #DFF0E8;
+  border-bottom-color: #1A3D2C;
+}
+.leaflet-bar a:hover { background: #142B1E; }
+
+.leaflet-control-attribution {
+  background: rgba(13, 31, 23, 0.8) !important;
+  color: #3D6B55;
+  font-size: 9px;
+}
+.leaflet-control-attribution a { color: #6B9E88; }
+
+/* Contador de anúncios empilhados: rótulo cru dentro do círculo, sem a
+   caixa branca com seta que o Tooltip do Leaflet desenha por padrão. */
+.pin-contador {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font-weight: 700;
+  font-size: 10px;
+  color: #070F0B;
+}
+.pin-contador::before { display: none; }
+
+/* Pino oco (centroide de bairro): o preenchimento é quase transparente, então
+   o número precisa ser claro para sobreviver ao mapa escuro. A cor do preço
+   fica no anel; aqui o que importa é o número ser legível. */
+.pin-contador-vazado { color: #DFF0E8; }

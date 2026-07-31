@@ -6,6 +6,7 @@ import { EvolucaoChart } from './components/EvolucaoChart'
 import { HistoricoPanel } from './components/HistoricoPanel'
 import { KpiBar } from './components/KpiBar'
 import { LoadingState } from './components/LoadingState'
+import { Mapa } from './components/Mapa'
 import { PriceChart } from './components/PriceChart'
 import { ReferencialMRVForm } from './components/ReferencialMRVForm'
 import { ResultCard } from './components/ResultCard'
@@ -281,6 +282,15 @@ export default function App() {
                 <ComparativoBairros
                   dados={resultado.por_bairro ?? []}
                   minimoConfiavel={MINIMO_AMOSTRA_CONFIAVEL}
+                />
+
+                {/* Mesma pergunta do comparativo — "onde?" — em forma espacial.
+                    Evolução (tempo) e distribuição vêm depois. */}
+                <Mapa
+                  empreendimentos={resultado.empreendimentos}
+                  precoM2Medio={resultado.preco_m2_medio}
+                  semLocalizacao={resultado.sem_localizacao ?? 0}
+                  comCoordenada={resultado.diagnostico?.com_coordenada}
                 />
 
                 {/* Gráfico de evolução histórica */}

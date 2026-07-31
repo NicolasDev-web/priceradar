@@ -1,3 +1,10 @@
+/**
+ * Como a coordenada foi obtida. União fechada de propósito: se o backend
+ * passar a mandar um valor novo, o `tsc` do build acusa em vez de o mapa
+ * desenhar um pino sem legenda.
+ */
+export type OrigemCoordenada = 'exata' | 'aproximada_portal' | 'centroide_bairro'
+
 export interface Empreendimento {
   id: string
   nome_anuncio: string
@@ -9,8 +16,7 @@ export interface Empreendimento {
   tipo_edificacao: string | null
   latitude: number | null
   longitude: number | null
-  /** exata | aproximada_portal | centroide_bairro */
-  origem_coordenada: string | null
+  origem_coordenada: OrigemCoordenada | null
   portal: string
   preco: number
   area_m2: number
