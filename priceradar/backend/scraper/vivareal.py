@@ -19,6 +19,7 @@ from scraper.parser import (
     extrair_nome_empreendimento,
     normalizar_cidade,
 )
+from scraper.rsc_grupozap import aplicar_localizacao, indexar_localizacoes
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,10 @@ def _parse_json_ld(
     soup = BeautifulSoup(html, 'lxml')
     resultados = []
 
+    # Coordenada e bairro estruturado vêm de outro trecho do MESMO html, sem
+    # requisição nova. Se o formato mudar, volta vazio e o parse segue igual.
+    localizacoes = indexar_localizacoes(html)
+
     for script in soup.find_all('script', type='application/ld+json'):
         try:
             data = json.loads(script.string or '')
@@ -143,7 +148,7 @@ def _parse_json_ld(
                 vagas_match = re.search(r'(\d+)\s*vaga', nome + ' ' + descricao, re.IGNORECASE)
                 vagas = int(vagas_match.group(1)) if vagas_match else None
 
-                resultados.append({
+                registro = {
                     'id': str(uuid.uuid4()),
                     'nome_anuncio': nome,
                     'nome_empreendimento': nome_emp,
@@ -162,12 +167,16 @@ def _parse_json_ld(
                     'descricao': descricao,
                     'url_anuncio': url_anuncio or VIVAREAL_BASE_URL,
                     'data_coleta': datetime.now(),
-                })
+                }
+                aplicar_localizacao(registro, localizacoes)
+                resultados.append(registro)
             except Exception as e:
                 logger.warning(f"VivaReal: erro ao processar item: {e}")
 
         break  # só precisa do primeiro ItemList
 
+    com_coord = sum(1 for r in resultados if r.get('latitude') is not None)
+    logger.info(f"VivaReal: {com_coord}/{len(resultados)} anúncios com coordenada")
     return resultados
 
 

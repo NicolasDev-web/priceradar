@@ -49,6 +49,9 @@ async def salvar_busca(db: AsyncSession, busca: BuscaRequest, resultado: BuscaRe
             bairro=emp.bairro,
             endereco=emp.endereco,
             tipo_edificacao=emp.tipo_edificacao,
+            latitude=emp.latitude,
+            longitude=emp.longitude,
+            origem_coordenada=emp.origem_coordenada,
             portal=emp.portal,
             preco=emp.preco,
             area_m2=emp.area_m2,
@@ -117,6 +120,11 @@ async def buscar_cache_recente(
             bairro=e.bairro,
             endereco=e.endereco,
             tipo_edificacao=e.tipo_edificacao,
+            # Sem estes três o cache hit devolveria um mapa vazio enquanto a
+            # busca fresca mostra os pinos — a mesma pergunta com duas respostas.
+            latitude=e.latitude,
+            longitude=e.longitude,
+            origem_coordenada=e.origem_coordenada,
             portal=e.portal,
             preco=e.preco,
             area_m2=e.area_m2,
@@ -145,6 +153,7 @@ async def buscar_cache_recente(
         preco_m2_mrv=preco_m2_mrv,
         empreendimentos=empreendimentos,
         tempo_coleta_segundos=0.0,
+        sem_localizacao=sum(1 for x in empreendimentos if x.latitude is None),
     )
 
 

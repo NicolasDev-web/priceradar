@@ -3,6 +3,9 @@
 *.env
 !.env.example
 
+# Fica só na máquina: contém o endereço de acesso da rede interna.
+RESUMO_PROJETO.md
+
 # Ambientes virtuais / dependências
 venv/
 .venv/
@@ -15,6 +18,8 @@ __pycache__/
 *.db-journal
 *.sqlite
 priceradar/backend/data/historico_fontes.json
+# Cache de bairros: acumula com o uso da máquina, regenerável a partir dos portais.
+priceradar/backend/data/bairros_por_cidade.json
 
 # Build do frontend
 dist/
@@ -28,6 +33,8 @@ uvicorn_err.log
 # Artefatos de verificação/debug
 screenshots/
 *.xlsx
+# Grafo de código da skill graphify: 2,3 MB, regenerável.
+graphify-out/
 
 # Perfil persistente do Playwright
 .priceradar_browser_profile/

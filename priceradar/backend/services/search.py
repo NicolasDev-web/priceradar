@@ -18,6 +18,7 @@ from scraper.quintoandar import scrape_quintoandar
 from scraper.vivareal import scrape_vivareal
 from scraper.zapimoveis import scrape_zapimoveis
 from services.deduplicador import deduplicar_cross_portal
+from services.geo import aplicar_centroide_bairro
 from services.historico_fontes import ordenar_fontes_por_prioridade, registrar_resultado
 from services.rf_refiner import refinar_com_random_forest
 from services.validacao import filtrar_anuncios
@@ -284,6 +285,14 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
     if RF_REFINER_HABILITADO and raw_unicos:
         raw_unicos = refinar_com_random_forest(raw_unicos)
 
+    # Quantos vieram com coordenada do portal, antes de qualquer estimativa —
+    # é o número que denuncia uma mudança de formato nos portais.
+    com_coordenada = sum(1 for i in raw_unicos if i.get('latitude') is not None)
+
+    # Posiciona pelo centro do bairro quem o portal não localizou. Depois do
+    # refino, para que o centroide não seja calculado sobre outlier removido.
+    sem_localizacao = aplicar_centroide_bairro(raw_unicos)
+
     # Construir Empreendimentos
     empreendimentos: list[Empreendimento] = []
     for item in raw_unicos:
@@ -297,6 +306,7 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
 
     diagnostico = DiagnosticoColeta(
         total_bruto=total_bruto,
+        com_coordenada=com_coordenada,
         fontes_ok=sorted(p for p, n in contagem_por_portal.items() if n > 0),
         fontes_zero=sorted(p for p, n in contagem_por_portal.items() if n == 0 and p not in fontes_erro),
         fontes_erro=sorted(fontes_erro),
@@ -323,4 +333,5 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
         empreendimentos=empreendimentos,
         tempo_coleta_segundos=tempo,
         diagnostico=diagnostico,
+        sem_localizacao=sem_localizacao,
     )

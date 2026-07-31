@@ -41,3 +41,9 @@ async def _migrar_colunas(conn):
         await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN endereco VARCHAR"))
     if "tipo_edificacao" not in colunas_emp:
         await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN tipo_edificacao VARCHAR"))
+    if "latitude" not in colunas_emp:
+        await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN latitude FLOAT"))
+    if "longitude" not in colunas_emp:
+        await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN longitude FLOAT"))
+    if "origem_coordenada" not in colunas_emp:
+        await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN origem_coordenada VARCHAR"))

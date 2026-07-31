@@ -17,6 +17,13 @@ class Empreendimento(BaseModel):
     # scraper/parser.py — 'indefinido' é ausência de dado, não de elevador.
     tipo_edificacao: str | None = None
     portal: str
+    # Coordenada para o mapa. VivaReal e Zap publicam a do anúncio; os demais
+    # portais não publicam nenhuma e são posicionados no centro do bairro.
+    # `origem_coordenada`: exata | aproximada_portal | centroide_bairro — o mapa
+    # precisa distinguir, senão apresenta palpite como endereço.
+    latitude: float | None = None
+    longitude: float | None = None
+    origem_coordenada: str | None = None
     preco: float
     area_m2: float
     preco_m2: float
@@ -55,6 +62,10 @@ class ResumoBairro(BaseModel):
 class DiagnosticoColeta(BaseModel):
     """Saúde da coleta. Permite distinguir 'não há imóveis' de 'a coleta falhou'."""
     total_bruto: int = 0
+    # Quantos anúncios vieram com coordenada do portal. O formato de onde ela
+    # sai não é documentado: se cair a zero de um dia para o outro, foi o portal
+    # que mudou — e isso precisa aparecer, não virar um mapa vazio sem motivo.
+    com_coordenada: int = 0
     fontes_ok: list[str] = []
     fontes_zero: list[str] = []
     fontes_erro: list[str] = []
@@ -132,6 +143,9 @@ class BuscaResponse(BaseModel):
     diagnostico: DiagnosticoColeta | None = None
     # Preenchido só quando a busca pediu mais de um bairro.
     por_bairro: list[ResumoBairro] = []
+    # Anúncios que não puderam ser posicionados no mapa. Sem esse número, um
+    # mapa com menos pinos que a lista parece defeito.
+    sem_localizacao: int = 0
 
 
 class ExportRequest(BaseModel):

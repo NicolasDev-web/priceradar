@@ -7,6 +7,10 @@ export interface Empreendimento {
   bairro: string | null
   endereco: string | null
   tipo_edificacao: string | null
+  latitude: number | null
+  longitude: number | null
+  /** exata | aproximada_portal | centroide_bairro */
+  origem_coordenada: string | null
   portal: string
   preco: number
   area_m2: number
@@ -26,6 +30,7 @@ export interface Empreendimento {
 
 export interface DiagnosticoColeta {
   total_bruto: number
+  com_coordenada: number
   fontes_ok: string[]
   fontes_zero: string[]
   fontes_erro: string[]
@@ -63,6 +68,7 @@ export interface BuscaResponse {
   do_cache: boolean
   diagnostico?: DiagnosticoColeta | null
   por_bairro?: ResumoBairro[]
+  sem_localizacao?: number
 }
 
 export interface BuscaSalva {

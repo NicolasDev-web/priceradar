@@ -33,7 +33,20 @@ COLUNAS = [
     ("Portal", 12),
     ("URL", 40),
     ("Data Coleta", 20),
+    # No fim de propósito: a formatação condicional abaixo endereça preço,
+    # área e preço/m² por índice fixo (colunas 6, 7 e 8).
+    ("Latitude", 12),
+    ("Longitude", 12),
+    ("Precisão", 18),
 ]
+
+# Como ler a coordenada da linha — sem isso, um centroide de bairro seria lido
+# como o endereço do imóvel.
+_ROTULO_ORIGEM = {
+    "exata": "Endereço",
+    "aproximada_portal": "Aproximada (portal)",
+    "centroide_bairro": "Centro do bairro",
+}
 
 
 def gerar_excel(empreendimentos: list[Empreendimento], preco_m2_medio: float) -> bytes:
@@ -78,6 +91,9 @@ def gerar_excel(empreendimentos: list[Empreendimento], preco_m2_medio: float) ->
             emp.portal,
             emp.url_anuncio,
             emp.data_coleta.strftime("%d/%m/%Y %H:%M") if emp.data_coleta else "",
+            emp.latitude if emp.latitude is not None else "",
+            emp.longitude if emp.longitude is not None else "",
+            _ROTULO_ORIGEM.get(emp.origem_coordenada or "", ""),
         ]
 
         for col_idx, valor in enumerate(valores, start=1):
