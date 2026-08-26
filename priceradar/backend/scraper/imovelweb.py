@@ -8,7 +8,6 @@ import asyncio
 import logging
 import os
 import re
-import unicodedata
 import uuid
 from datetime import datetime
 
@@ -20,16 +19,12 @@ from scraper.parser import (
     extrair_nome_empreendimento,
     normalizar_cidade,
 )
+from services.texto import sem_acento
 
 logger = logging.getLogger(__name__)
 
 IMOVELWEB_BASE = "https://www.imovelweb.com.br"
 MAX_PAGINAS = int(os.getenv("IMOVELWEB_MAX_PAGINAS", "2"))
-
-
-def _sem_acento(texto: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", texto)
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 def _build_url(cidade_slug: str, estado_slug: str, preco_min: float, preco_max: float, quartos: int | None, pagina: int = 1) -> str:
@@ -176,7 +171,7 @@ async def scrape_imovelweb(
     bairro: str | None = None,
 ) -> list[dict]:
     partes = cidade.strip().split(",")
-    nome_cidade = _sem_acento(partes[0].strip()).lower().replace(" ", "-")
+    nome_cidade = sem_acento(partes[0].strip()).lower().replace(" ", "-")
     estado_slug = partes[1].strip().lower() if len(partes) > 1 else "sp"
     cidade_normalizada = normalizar_cidade(partes[0].strip())
 

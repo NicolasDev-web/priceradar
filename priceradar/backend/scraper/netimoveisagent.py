@@ -7,7 +7,6 @@ Fallback: parse de script tags com objeto window.__INITIAL_STATE__.
 import json
 import logging
 import re
-import unicodedata
 import uuid
 from datetime import datetime
 from typing import Any
@@ -21,16 +20,11 @@ from scraper.parser import (
     extrair_nome_empreendimento,
     normalizar_cidade,
 )
+from services.texto import sem_acento
 
 logger = logging.getLogger(__name__)
 
 NETIMOVEISS_BASE = "https://www.netimoveis.com"
-
-
-
-def _sem_acento(texto: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", texto)
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 def _build_url(estado: str, cidade: str, preco_min: float, preco_max: float, quartos: int | None) -> str:
@@ -231,7 +225,7 @@ async def scrape_netimoveis(
     bairro: str | None = None,
 ) -> list[dict]:
     partes = cidade.strip().split(",")
-    nome_cidade = _sem_acento(partes[0].strip()).lower().replace(" ", "-")
+    nome_cidade = sem_acento(partes[0].strip()).lower().replace(" ", "-")
     estado = partes[1].strip().lower() if len(partes) > 1 else "sp"
     cidade_normalizada = normalizar_cidade(partes[0].strip())
 

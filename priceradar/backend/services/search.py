@@ -4,7 +4,6 @@ import os
 import random
 import statistics
 import time
-import unicodedata
 import uuid
 from datetime import datetime
 
@@ -17,11 +16,13 @@ from scraper.olximoveis import scrape_olximoveis
 from scraper.quintoandar import scrape_quintoandar
 from scraper.vivareal import scrape_vivareal
 from scraper.zapimoveis import scrape_zapimoveis
+from services import jobs
 from services.bairros import registrar_bairros_vistos
 from services.deduplicador import deduplicar_cross_portal
 from services.geo import aplicar_centroide_bairro
 from services.historico_fontes import ordenar_fontes_por_prioridade, registrar_resultado
 from services.rf_refiner import refinar_com_random_forest
+from services.texto import normalizar
 from services.validacao import filtrar_anuncios
 
 logger = logging.getLogger(__name__)
@@ -45,11 +46,6 @@ RF_REFINER_HABILITADO = os.getenv("HABILITAR_RF_REFINER", "true").lower() == "tr
 DEDUP_CROSS_PORTAL_HABILITADO = os.getenv("HABILITAR_DEDUP_CROSS_PORTAL", "true").lower() == "true"
 
 
-def _normalizar(texto: str) -> str:
-    nfkd = unicodedata.normalize('NFKD', texto)
-    return ''.join(c for c in nfkd if not unicodedata.combining(c)).lower().strip()
-
-
 # Origens em que o bairro veio ESTRUTURADO do portal. aplicar_localizacao()
 # grava `origem_coordenada` e `bairro` na mesma passagem, então esses dois
 # valores são exatamente "este nome veio do payload". O bairro dos demais
@@ -66,7 +62,7 @@ def bairros_para_registrar(itens: list[dict]) -> list[str]:
         if item.get('origem_coordenada') not in _ORIGENS_COM_BAIRRO_DO_PORTAL:
             continue
         nome = (item.get('bairro') or '').strip()
-        chave = _normalizar(nome)
+        chave = normalizar(nome)
         if nome and chave not in vistos:
             vistos.add(chave)
             nomes.append(nome)
@@ -75,8 +71,8 @@ def bairros_para_registrar(itens: list[dict]) -> list[str]:
 
 def extrair_cidade_estado(cidade_str: str) -> tuple[str, str]:
     partes = cidade_str.strip().split(',')
-    cidade = _normalizar(partes[0]).replace(' ', '-')
-    estado = _normalizar(partes[1]).strip() if len(partes) > 1 else 'sp'
+    cidade = normalizar(partes[0]).replace(' ', '-')
+    estado = normalizar(partes[1]).strip() if len(partes) > 1 else 'sp'
     return cidade, estado
 
 
@@ -111,7 +107,7 @@ def _gerar_mock_data(request: BuscaRequest) -> list[dict]:
             'nome_anuncio': nomes[i % len(nomes)],
             'nome_empreendimento': nomes[i % len(nomes)],
             'construtora': construtoras[i % len(construtoras)],
-            'cidade': _normalizar(cidade),
+            'cidade': normalizar(cidade),
             'bairro': bairros[i % len(bairros)],
             'portal': portais[i % len(portais)],
             'preco': preco,
@@ -142,8 +138,8 @@ def _resumir_por_bairro(
 
     resumos = []
     for pedido in bairros_pedidos:
-        alvo = _normalizar(pedido)
-        do_bairro = [e for e in empreendimentos if e.bairro and alvo in _normalizar(e.bairro)]
+        alvo = normalizar(pedido)
+        do_bairro = [e for e in empreendimentos if e.bairro and alvo in normalizar(e.bairro)]
         if not do_bairro:
             continue
         precos = sorted(e.preco_m2 for e in do_bairro)
@@ -160,7 +156,23 @@ def _resumir_por_bairro(
     return resumos
 
 
-async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = None) -> BuscaResponse:
+async def executar_busca(
+    request: BuscaRequest, preco_m2_mrv: float | None = None, job_id: str | None = None
+) -> BuscaResponse:
+    """Fina camada sobre `_executar_busca_interna` só para garantir que o job
+    de progresso feche mesmo se algo depois do scraping (validação, dedup)
+    levantar exceção — senão o polling do frontend ficaria esperando um job
+    que nunca termina."""
+    try:
+        return await _executar_busca_interna(request, preco_m2_mrv, job_id)
+    finally:
+        if job_id:
+            jobs.marcar_concluido(job_id)
+
+
+async def _executar_busca_interna(
+    request: BuscaRequest, preco_m2_mrv: float | None, job_id: str | None
+) -> BuscaResponse:
     inicio = time.time()
     contagem_por_portal: dict[str, int] = {}
     fontes_erro: list[str] = []
@@ -225,7 +237,28 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
         )
         tarefas = [(nome, coro) for nome in nomes_ordenados for coro in por_portal[nome]]
 
-        resultados = await asyncio.gather(*(t[1] for t in tarefas), return_exceptions=True)
+        if job_id:
+            jobs.criar(job_id, {nome: len(coros) for nome, coros in por_portal.items()})
+
+        async def _com_progresso(portal: str, coro):
+            # Cada tarefa reporta seu próprio progresso assim que termina —
+            # asyncio.gather só libera o zip abaixo quando TODAS as tarefas
+            # acabam, então é aqui que o progresso incremental de verdade
+            # acontece, não depois do gather.
+            try:
+                resultado = await coro
+                if job_id:
+                    n = len(resultado) if isinstance(resultado, list) else 0
+                    jobs.marcar_tarefa_concluida(job_id, portal, n, erro=False)
+                return resultado
+            except Exception as e:
+                if job_id:
+                    jobs.marcar_tarefa_concluida(job_id, portal, 0, erro=True)
+                return e
+
+        resultados = await asyncio.gather(
+            *(_com_progresso(nome, coro) for nome, coro in tarefas), return_exceptions=True
+        )
 
         raw_todos = []
         for (portal, _), resultado in zip(tarefas, resultados):
@@ -271,11 +304,11 @@ async def executar_busca(request: BuscaRequest, preco_m2_mrv: float | None = Non
     # portais é recortado aqui, contra o campo `bairro` já corrigido.
     bairros_filtro = request.lista_bairros
     if bairros_filtro:
-        alvos = [_normalizar(b) for b in bairros_filtro]
+        alvos = [normalizar(b) for b in bairros_filtro]
         antes_bairro = len(raw_todos)
         raw_todos = [
             item for item in raw_todos
-            if item.get('bairro') and any(a in _normalizar(item['bairro']) for a in alvos)
+            if item.get('bairro') and any(a in normalizar(item['bairro']) for a in alvos)
         ]
         fora = antes_bairro - len(raw_todos)
         if fora:

@@ -41,6 +41,7 @@ import unicodedata
 from scraper.http import buscar_html
 from scraper.rsc_grupozap import _payload_rsc
 from scraper.vivareal import _extrair_estado_cidade
+from services.texto import normalizar
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +68,8 @@ _cache: dict[str, list[str]] = {}
 _LOCK_CACHE = threading.Lock()
 
 
-def _normalizar(texto: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", texto)
-    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower().strip()
-
-
 def _tem_acento(texto: str) -> bool:
-    """Compara preservando a caixa — `_normalizar` também baixa a caixa, e usá-lo
+    """Compara preservando a caixa — `normalizar` também baixa a caixa, e usá-lo
     aqui faria todo nome capitalizado parecer acentuado."""
     nfkd = unicodedata.normalize("NFKD", texto)
     return any(unicodedata.combining(c) for c in nfkd)
@@ -107,7 +103,7 @@ def _unir(*fontes: list[str]) -> list[str]:
             nome = nome.strip()
             if not nome or _NAO_E_BAIRRO.match(nome):
                 continue
-            chave = _normalizar(nome)
+            chave = normalizar(nome)
             atual = escolhido.get(chave)
             if atual is None or (not _tem_acento(atual) and _tem_acento(nome)):
                 escolhido[chave] = nome

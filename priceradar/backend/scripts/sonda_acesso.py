@@ -52,11 +52,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scraper.chavesnamao import _build_url as build_chavesnamao_url  # noqa: E402
-from scraper.chavesnamao import _sem_acento  # noqa: E402
 from scraper.http import _HEADERS, IMPERSONATE, TIMEOUT_SEGUNDOS  # noqa: E402
 from scraper.imovelweb import _build_url as build_imovelweb_url  # noqa: E402
 from scraper.vivareal import _extrair_estado_cidade, build_vivareal_url  # noqa: E402
 from scraper.zapimoveis import build_zapimoveis_url  # noqa: E402
+from services.texto import sem_acento as _sem_acento  # noqa: E402
 
 # Tolerância na comparação: abaixo disso a nuvem está vendo menos inventário
 # que a máquina local, e a diferença não dá para atribuir a ruído do portal.

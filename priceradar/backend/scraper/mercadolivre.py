@@ -7,7 +7,6 @@ A API REST do ML exige OAuth desde 2024; o site público ainda é acessível.
 import json
 import logging
 import re
-import unicodedata
 import uuid
 from datetime import datetime
 from typing import Any
@@ -16,6 +15,7 @@ from bs4 import BeautifulSoup
 
 from scraper.browser import buscar_html_playwright, interceptar_api_playwright
 from scraper.parser import calcular_preco_m2, extrair_construtora, normalizar_cidade
+from services.texto import sem_acento
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +31,6 @@ _SIGLA_ESTADO = {
     "rr": "roraima", "sc": "santa-catarina", "sp": "sao-paulo",
     "se": "sergipe", "to": "tocantins",
 }
-
-
-def _sem_acento(texto: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", texto)
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 def _build_url(cidade_slug: str, estado_slug: str, preco_min: float, preco_max: float, quartos: int | None) -> str:
@@ -219,7 +214,7 @@ async def scrape_mercadolivre(
     bairro: str | None = None,
 ) -> list[dict]:
     partes = cidade.strip().split(",")
-    nome_cidade = _sem_acento(partes[0].strip()).lower().replace(" ", "-")
+    nome_cidade = sem_acento(partes[0].strip()).lower().replace(" ", "-")
     sigla = partes[1].strip().lower() if len(partes) > 1 else "sp"
     estado_slug = _SIGLA_ESTADO.get(sigla, sigla)
     cidade_normalizada = normalizar_cidade(partes[0].strip())

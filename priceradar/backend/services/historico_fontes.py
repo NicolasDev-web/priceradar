@@ -14,8 +14,9 @@ import os
 import pathlib
 import tempfile
 import threading
-import unicodedata
 from datetime import datetime
+
+from services.texto import normalizar
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +32,6 @@ _MIN_RF_ENTRADAS = 10
 # fariam read-modify-write no mesmo JSON e a última apagaria o que a primeira
 # registrou. Mesmo cuidado que `services/bairros.py` já toma.
 _LOCK_HISTORICO = threading.Lock()
-
-
-def _sem_acento(texto: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", texto)
-    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower().strip()
 
 
 def _carregar_historico() -> dict:
@@ -70,7 +66,7 @@ def _salvar_historico(historico: dict) -> None:
 
 def registrar_resultado(portal: str, cidade: str, preco_min: float, preco_max: float, quartos: int | None, n_resultados: int) -> None:
     """Registra o resultado de uma busca no histórico persistente."""
-    cidade_norm = _sem_acento(cidade.split(",")[0])
+    cidade_norm = normalizar(cidade.split(",")[0])
     chave = f"{portal}::{cidade_norm}"
     agora = datetime.now()
 
@@ -108,7 +104,7 @@ def _featurizar(cidade: str, preco_min: float, preco_max: float, quartos: int | 
     """Features de contexto para o RF de priorização."""
     faixa_preco = (preco_max - preco_min) / max(preco_min, 1)
     hora = datetime.now().hour
-    cidade_hash = float(abs(hash(_sem_acento(cidade.split(",")[0]))) % 100) / 100.0
+    cidade_hash = float(abs(hash(normalizar(cidade.split(",")[0]))) % 100) / 100.0
     quartos_f = float(quartos) if quartos else 2.0
     return [faixa_preco, hora / 23.0, cidade_hash, quartos_f / 5.0]
 
@@ -151,7 +147,7 @@ def ordenar_fontes_por_prioridade(
     Se não há histórico suficiente, usa taxa de sucesso simples como critério.
     """
     historico = _carregar_historico()
-    cidade_norm = _sem_acento(cidade.split(",")[0])
+    cidade_norm = normalizar(cidade.split(",")[0])
 
     scores: dict[str, float] = {}
     for portal in fontes:

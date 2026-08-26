@@ -10,13 +10,13 @@ import json
 import logging
 import os
 import re
-import unicodedata
 import uuid
 from datetime import datetime
 
 import httpx
 
 from scraper.parser import calcular_preco_m2, normalizar_cidade
+from services.texto import sem_acento
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +49,8 @@ _CIDADE_SLUG = {
 }
 
 
-def _sem_acento(texto: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", texto)
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
-
-
 def _cidade_para_slug(cidade: str, estado: str) -> str:
-    chave = _sem_acento(cidade).lower().strip()
+    chave = sem_acento(cidade).lower().strip()
     if chave in _CIDADE_SLUG:
         return _CIDADE_SLUG[chave]
     return f"{chave.replace(' ', '-')}-{estado.lower()}-brasil"
@@ -182,7 +177,7 @@ async def scrape_quintoandar(
     bairro: str | None = None,
 ) -> list[dict]:
     partes = cidade.strip().split(",")
-    nome_cidade = _sem_acento(partes[0].strip())
+    nome_cidade = sem_acento(partes[0].strip())
     estado = partes[1].strip().lower() if len(partes) > 1 else "sp"
     cidade_normalizada = normalizar_cidade(partes[0].strip())
     slug = _cidade_para_slug(nome_cidade, estado)

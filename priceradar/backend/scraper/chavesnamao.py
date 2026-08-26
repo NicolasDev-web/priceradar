@@ -18,7 +18,6 @@ import json
 import logging
 import os
 import re
-import unicodedata
 import uuid
 from datetime import datetime
 
@@ -26,6 +25,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from scraper.parser import calcular_preco_m2, extrair_construtora, normalizar_cidade
+from services.texto import sem_acento
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +50,6 @@ _HEADERS = {
 # pedida. É o pior tipo de falha: dado de outra praça apresentado como certo.
 
 
-def _sem_acento(texto: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", texto)
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
-
-
 def _build_url(cidade: str, estado: str, preco_min: float, preco_max: float, quartos: int | None, pagina: int = 1) -> str:
     """
     Monta a URL de busca.
@@ -64,8 +59,8 @@ def _build_url(cidade: str, estado: str, preco_min: float, preco_max: float, qua
     Faixa de preço não tem filtro server-side em nenhum formato conhecido;
     é aplicada no parsing.
     """
-    cidade_slug = _sem_acento(cidade).lower().strip().replace(" ", "-")
-    estado_cidade = f"{_sem_acento(estado).lower().strip()}-{cidade_slug}"
+    cidade_slug = sem_acento(cidade).lower().strip().replace(" ", "-")
+    estado_cidade = f"{sem_acento(estado).lower().strip()}-{cidade_slug}"
     url = f"{CHAVESNAMAO_BASE}/apartamentos-a-venda/{estado_cidade}/"
     if quartos:
         url += f"{int(quartos)}-quartos/"
@@ -217,7 +212,7 @@ async def scrape_chavesnamao(
     bairro: str | None = None,
 ) -> list[dict]:
     partes = cidade.strip().split(",")
-    nome_cidade = _sem_acento(partes[0].strip()).lower().replace(" ", "-")
+    nome_cidade = sem_acento(partes[0].strip()).lower().replace(" ", "-")
     estado = partes[1].strip().lower() if len(partes) > 1 else "sp"
     cidade_normalizada = normalizar_cidade(partes[0].strip())
 

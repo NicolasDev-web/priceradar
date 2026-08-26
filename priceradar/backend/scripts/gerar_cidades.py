@@ -12,10 +12,13 @@ Rode sob demanda:
     venv/Scripts/python.exe scripts/gerar_cidades.py
 """
 import sys
-import unicodedata
 from pathlib import Path
 
 import httpx
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from services.texto import sem_acento  # noqa: E402
 
 # O PriceRadar atende o Nordeste. Sugerir município de outra região só ocupa
 # espaço na lista e no bundle — e a busca continua aceitando qualquer cidade
@@ -34,11 +37,6 @@ URL_POPULACAO = (
 )
 
 DESTINO = Path(__file__).resolve().parents[2] / "frontend" / "src" / "data" / "cidades.ts"
-
-
-def _sem_acento(texto: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", texto)
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 def _uf_bruta(m: dict) -> dict:
@@ -108,7 +106,7 @@ def main() -> int:
     cidades.sort(key=lambda c: -c[2])
 
     linhas = ",\n".join(
-        f'  ["{nome}","{uf}","{_sem_acento(nome).lower()}"]' for nome, uf, _ in cidades
+        f'  ["{nome}","{uf}","{sem_acento(nome).lower()}"]' for nome, uf, _ in cidades
     )
     conteudo = f"""// GERADO POR backend/scripts/gerar_cidades.py — não edite à mão.
 //

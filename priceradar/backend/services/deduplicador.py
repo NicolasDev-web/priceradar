@@ -23,9 +23,10 @@ from __future__ import annotations
 
 import logging
 import os
-import unicodedata
 from collections import defaultdict
 from difflib import SequenceMatcher
+
+from services.texto import normalizar
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +35,10 @@ LIMIAR_DEDUP = float(os.getenv("DEDUP_LIMIAR", "0.85"))
 LIMIAR_BAIRRO = float(os.getenv("DEDUP_LIMIAR_BAIRRO", "0.80"))
 
 
-def _sem_acento(texto: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", texto)
-    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower().strip()
-
-
 def _similaridade_texto(a: str | None, b: str | None) -> float:
     if not a or not b:
         return 0.0
-    return SequenceMatcher(None, _sem_acento(a), _sem_acento(b)).ratio()
+    return SequenceMatcher(None, normalizar(a), normalizar(b)).ratio()
 
 
 def _features_par(a: dict, b: dict) -> list[float]:
@@ -150,7 +146,7 @@ def deduplicar_cross_portal(listings: list[dict]) -> list[dict]:
     for idx, item in enumerate(listings):
         area = float(item.get("area_m2") or 0)
         preco = float(item.get("preco") or 0)
-        bairro = _sem_acento(str(item.get("bairro") or ""))[:12]
+        bairro = normalizar(str(item.get("bairro") or ""))[:12]
         for da in (0, 1):
             for dp in (0, 1):
                 blocos[(bairro, int(area // 5) + da, int(preco // 10_000) + dp)].append(idx)

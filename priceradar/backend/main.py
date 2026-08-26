@@ -42,6 +42,7 @@ from repositories.empreendimento_repo import (
     preco_m2_historico,
     upsert_referencial_mrv,
 )
+from services import jobs
 from services.auth import conferir_senha, exigir_login, gerar_token
 from services.bairros import listar_bairros
 from services.export import gerar_excel
@@ -94,6 +95,7 @@ async def login(payload: LoginRequest):
 async def buscar(
     request: BuscaRequest,
     forcar: bool = Query(default=False, description="Ignora o cache e refaz o scraping"),
+    job_id: str | None = Query(default=None, description="Id gerado pelo cliente para acompanhar o progresso em /api/buscar/jobs/{job_id}"),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -108,12 +110,33 @@ async def buscar(
                 cache.do_cache = True
                 return cache
 
-        resultado = await executar_busca(request, preco_m2_mrv)
+        resultado = await executar_busca(request, preco_m2_mrv, job_id=job_id)
         await salvar_busca(db, request, resultado)
         return resultado
     except Exception as e:
         logger.error(f"Erro em /api/buscar: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router_protegido.get("/api/buscar/jobs/{job_id}")
+async def status_job(job_id: str):
+    """Progresso por portal de uma busca ao vivo em andamento — para o
+    frontend fazer polling durante os 30-90s de scraping."""
+    job = jobs.obter(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job não encontrado")
+    return {
+        "concluido": job.concluido_em is not None,
+        "portais": {
+            nome: {
+                "concluidas": status.concluidas,
+                "esperadas": status.esperadas,
+                "itens": status.itens,
+                "erro": status.erro,
+            }
+            for nome, status in job.portais.items()
+        },
+    }
 
 
 @router_protegido.post("/api/exportar")

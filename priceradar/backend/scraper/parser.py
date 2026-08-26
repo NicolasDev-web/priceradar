@@ -1,5 +1,6 @@
 import re
-import unicodedata
+
+from services.texto import normalizar as normalizar_cidade
 
 
 def limpar_preco(texto: str) -> float | None:
@@ -42,16 +43,6 @@ def extrair_numero(texto: str) -> int | None:
         return int(match.group()) if match else None
     except Exception:
         return None
-
-
-def normalizar_cidade(texto: str) -> str:
-    """Remove acentos, lowercase, strip."""
-    try:
-        nfkd = unicodedata.normalize('NFKD', texto)
-        sem_acento = ''.join(c for c in nfkd if not unicodedata.combining(c))
-        return sem_acento.lower().strip()
-    except Exception:
-        return texto.lower().strip()
 
 
 def calcular_preco_m2(preco: float, area: float) -> float:

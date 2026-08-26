@@ -16,7 +16,8 @@ com uma dependência de rede, limite de requisições e mais um cache para mante
 from __future__ import annotations
 
 import logging
-import unicodedata
+
+from services.texto import normalizar
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +27,6 @@ logger = logging.getLogger(__name__)
 MINIMO_PARA_CENTROIDE = 2
 
 
-def _normalizar(texto: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", texto)
-    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower().strip()
-
-
 def calcular_centroides(itens: list[dict]) -> dict[str, tuple[float, float]]:
     """Bairro normalizado → (lat, lng) médio dos anúncios que têm coordenada."""
     acumulado: dict[str, list[tuple[float, float]]] = {}
@@ -38,7 +34,7 @@ def calcular_centroides(itens: list[dict]) -> dict[str, tuple[float, float]]:
         bairro = item.get("bairro")
         lat, lng = item.get("latitude"), item.get("longitude")
         if bairro and lat is not None and lng is not None:
-            acumulado.setdefault(_normalizar(bairro), []).append((lat, lng))
+            acumulado.setdefault(normalizar(bairro), []).append((lat, lng))
 
     return {
         bairro: (sum(p[0] for p in pontos) / len(pontos), sum(p[1] for p in pontos) / len(pontos))
@@ -62,7 +58,7 @@ def aplicar_centroide_bairro(itens: list[dict]) -> int:
         if item.get("latitude") is not None:
             continue
         bairro = item.get("bairro")
-        centro = centroides.get(_normalizar(bairro)) if bairro else None
+        centro = centroides.get(normalizar(bairro)) if bairro else None
         if centro is None:
             sem_posicao += 1
             continue
