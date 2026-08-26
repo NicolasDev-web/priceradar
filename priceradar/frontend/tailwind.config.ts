@@ -73,11 +73,18 @@ const config: Config = {
         'blink': 'blink 1.2s step-end infinite',
         'slide-in': 'slideIn 0.2s ease-out',
         'fade-up': 'fadeUp 0.3s ease-out',
+        // 8 quadros no spritesheet (ver SPRITE_FRAMES em LoadingState.tsx) —
+        // steps(7,…) = SPRITE_FRAMES - 1, pra cravar em cada quadro sem interpolar.
+        'sprite-run': 'spriteRun 0.8s steps(7, jump-none) infinite',
       },
       keyframes: {
         scan: {
           '0%, 100%': { opacity: '0.4' },
           '50%': { opacity: '1' },
+        },
+        spriteRun: {
+          from: { backgroundPositionX: '0%' },
+          to: { backgroundPositionX: '100%' },
         },
         blink: {
           '0%, 100%': { opacity: '1' },

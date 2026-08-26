@@ -1,5 +1,6 @@
+import axios from 'axios'
 import { AlertTriangle, Clock, Download, RefreshCw } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { buscarConcorrentes, exportarExcel, getToken } from './api/client'
 import { ComparativoBairros } from './components/ComparativoBairros'
 import { EvolucaoChart } from './components/EvolucaoChart'
@@ -12,21 +13,8 @@ import { PriceChart } from './components/PriceChart'
 import { ReferencialMRVForm } from './components/ReferencialMRVForm'
 import { ResultCard } from './components/ResultCard'
 import { SearchForm } from './components/SearchForm'
+import { LABEL_PORTAL, PORTAL_CONFIG } from './data/portais'
 import type { BuscaRequest, BuscaResponse, BuscaSalva } from './types'
-
-// Configuração de todos os portais suportados
-const PORTAL_CONFIG: Record<string, { label: string; color: string }> = {
-  vivareal:     { label: 'VivaReal',     color: 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/40' },
-  zapimoveis:   { label: 'ZAP',          color: 'bg-amber-900/60 text-amber-300 border border-amber-700/40' },
-  chavesnamao:  { label: 'ChavesNaMão',  color: 'bg-rose-900/60 text-rose-300 border border-rose-700/40' },
-  imovelweb:    { label: 'ImovelWeb',    color: 'bg-sky-900/60 text-sky-300 border border-sky-700/40' },
-  olx:          { label: 'OLX',          color: 'bg-indigo-900/60 text-indigo-300 border border-indigo-700/40' },
-  quintoandar:  { label: 'QuintoAndar',  color: 'bg-teal-900/60 text-teal-300 border border-teal-700/40' },
-  netimoveis:   { label: 'NetImóveis',   color: 'bg-violet-900/60 text-violet-300 border border-violet-700/40' },
-  mercadolivre: { label: 'Mercado Livre',color: 'bg-yellow-900/60 text-yellow-300 border border-yellow-700/40' },
-}
-
-const LABEL_PORTAL = (p: string) => PORTAL_CONFIG[p]?.label ?? p
 
 // Abaixo disso a mediana oscila demais com um anúncio a mais ou a menos.
 // Cidades do interior costumam cair aqui — o aviso evita que um número frágil
@@ -42,6 +30,8 @@ export default function App() {
   const [mostrarHistorico, setMostrarHistorico] = useState(false)
   const [mostrarFormMRV, setMostrarFormMRV] = useState(false)
   const [autenticado, setAutenticado] = useState(() => !!getToken())
+  const [jobId, setJobId] = useState<string | null>(null)
+  const buscaAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     function aoExpirar() {
@@ -56,14 +46,25 @@ export default function App() {
   const coletaParcial = fontesErro.length > 0 && !coletaFalhou
 
   async function handleBuscar(params: BuscaRequest, forcar = false) {
+    // Reenviar o formulário (ou clicar "Atualizar" de novo) enquanto a busca
+    // anterior ainda está em voo cancela a antiga — sem isso, a que responder
+    // por último decide a tela, mesmo que seja a mais velha.
+    buscaAbortRef.current?.abort()
+    const controller = new AbortController()
+    buscaAbortRef.current = controller
+
+    const idDoJob = crypto.randomUUID()
+    setJobId(idDoJob)
     setLoading(true)
     setErro(null)
     setResultado(null)
     setUltimaBusca(params)
     try {
-      const dados = await buscarConcorrentes(params, forcar)
+      const dados = await buscarConcorrentes(params, forcar, { jobId: idDoJob, signal: controller.signal })
       setResultado(dados)
     } catch (e: unknown) {
+      if (axios.isCancel(e)) return // busca cancelada por um reenvio — não é erro
+
       // 422 = a API recusou os filtros (ex.: cidade sem UF). Mostrar o motivo
       // real, não "verifique se o servidor está rodando" — que manda o usuário
       // investigar a coisa errada.
@@ -79,7 +80,13 @@ export default function App() {
         setErro(`Não foi possível buscar os dados. Verifique se o servidor está rodando.\n${msg}`)
       }
     } finally {
-      setLoading(false)
+      // Só limpa o estado se esta ainda for a busca vigente — a que acabou
+      // de ser cancelada por um reenvio não pode apagar o loading/jobId da
+      // busca nova que já está rodando.
+      if (buscaAbortRef.current === controller) {
+        setLoading(false)
+        setJobId(null)
+      }
     }
   }
 
@@ -183,7 +190,7 @@ export default function App() {
           </div>
         )}
 
-        {loading && <LoadingState />}
+        {loading && <LoadingState jobId={jobId} />}
 
         {resultado && !loading && (
           <>

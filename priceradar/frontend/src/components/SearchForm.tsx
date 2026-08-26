@@ -46,16 +46,19 @@ export function SearchForm({ onBuscar, loading }: Props) {
   const cidadeRef = useRef<HTMLInputElement>(null)
 
   // Bairros com oferta na cidade escolhida. Só busca quando a cidade está
-  // completa ("Cidade, UF") — a cada tecla seria uma requisição à toa.
+  // completa ("Cidade, UF"), e com debounce de 300ms — sem isso, corrigir
+  // algo antes da vírgula ("Fortaleza, C" → "Fortaleza, CE") dispara uma
+  // requisição a cada tecla.
   useEffect(() => {
     const partes = cidade.split(',')
     if (partes.length < 2 || partes[1].trim().length !== 2) {
       setBairrosDaCidade([])
       return
     }
-    let cancelado = false
-    listarBairros(cidade).then(bs => { if (!cancelado) setBairrosDaCidade(bs) })
-    return () => { cancelado = true }
+    const timer = setTimeout(() => {
+      listarBairros(cidade).then(bs => setBairrosDaCidade(bs))
+    }, 300)
+    return () => clearTimeout(timer)
   }, [cidade])
 
   // Não sugere o que já foi escolhido, e filtra pelo que está sendo digitado.

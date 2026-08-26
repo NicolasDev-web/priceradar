@@ -1,22 +1,70 @@
-export function LoadingState() {
+import corredorSprite from '../assets/sprites/corredor.png'
+import { LABEL_PORTAL } from '../data/portais'
+import { useBuscaProgress } from '../hooks/useBuscaProgress'
+
+// Recortado/alinhado a partir do spritesheet fonte por um script one-off
+// (Pillow/numpy) — ver plano de arquitetura de busca. Mudar esses números
+// exige regerar o asset, não só editar aqui.
+const SPRITE_FRAMES = 8
+const SPRITE_FRAME_W = 89
+const SPRITE_FRAME_H = 136
+
+interface Props {
+  /** Id da busca em andamento — liga o polling de progresso por portal. */
+  jobId?: string | null
+}
+
+export function LoadingState({ jobId = null }: Props) {
+  const progresso = useBuscaProgress(jobId)
+  const portais = progresso ? Object.entries(progresso.portais) : []
+
   return (
     <div className="w-full space-y-5 mt-4">
 
       {/* Status de varredura */}
-      <div className="flex items-center gap-3 justify-center py-3">
-        {/* Radar pulsante pequeno */}
-        <div className="relative w-5 h-5">
-          <div className="absolute inset-0 rounded-full border border-mrv-border animate-ping opacity-40" />
-          <div className="absolute inset-1 rounded-full bg-mrv-orange/80" />
-        </div>
-        <span className="text-sm font-medium text-mrv-text-muted tracking-wide">
-          Varrendo portais imobiliários
-          <span className="inline-flex gap-0.5 ml-1">
-            <span className="animate-bounce [animation-delay:0ms]">.</span>
-            <span className="animate-bounce [animation-delay:150ms]">.</span>
-            <span className="animate-bounce [animation-delay:300ms]">.</span>
+      <div className="flex flex-col items-center gap-2 justify-center py-3">
+        <div className="flex items-center gap-3">
+          {/* Bonequinho correndo — símbolo de progresso enquanto os portais respondem */}
+          <div
+            role="img"
+            aria-label="Bonequinho correndo, indicando que a busca está em andamento"
+            className="shrink-0 motion-safe:animate-sprite-run"
+            style={{
+              height: 68,
+              aspectRatio: `${SPRITE_FRAME_W} / ${SPRITE_FRAME_H}`,
+              backgroundImage: `url(${corredorSprite})`,
+              backgroundSize: `${SPRITE_FRAMES * 100}% 100%`,
+              backgroundRepeat: 'no-repeat',
+              imageRendering: 'pixelated',
+            }}
+          />
+          <span className="text-sm font-medium text-mrv-text-muted tracking-wide">
+            Varrendo portais imobiliários
+            <span className="inline-flex gap-0.5 ml-1">
+              <span className="animate-bounce [animation-delay:0ms]">.</span>
+              <span className="animate-bounce [animation-delay:150ms]">.</span>
+              <span className="animate-bounce [animation-delay:300ms]">.</span>
+            </span>
           </span>
-        </span>
+        </div>
+
+        {/* Progresso real por portal, via polling — some enquanto o job
+            ainda não existe no backend (primeiro instante da busca). */}
+        {portais.length > 0 && (
+          <p className="text-xs text-mrv-text-dim font-data tracking-wide text-center max-w-md">
+            {portais.map(([portal, status], i) => (
+              <span key={portal}>
+                {i > 0 && ' · '}
+                {LABEL_PORTAL(portal)}{' '}
+                {status.erro
+                  ? <span className="text-red-400">falhou</span>
+                  : status.concluidas >= status.esperadas
+                    ? <span className="text-mrv-green-light">✓ {status.itens}</span>
+                    : '…'}
+              </span>
+            ))}
+          </p>
+        )}
       </div>
 
       {/* KPI skeletons */}

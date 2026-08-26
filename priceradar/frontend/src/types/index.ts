@@ -115,3 +115,15 @@ export interface ReferencialMRVResponse {
   quartos: number | null
   preco_m2_mrv: number | null
 }
+
+export interface StatusPortal {
+  concluidas: number
+  esperadas: number
+  itens: number
+  erro: boolean
+}
+
+export interface ProgressoBusca {
+  concluido: boolean
+  portais: Record<string, StatusPortal>
+}

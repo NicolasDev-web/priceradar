@@ -4,6 +4,7 @@ import type {
   BuscaResponse,
   EvolucaoResponse,
   HistoricoResponse,
+  ProgressoBusca,
   ReferencialMRVInput,
   ReferencialMRVResponse,
 } from '../types'
@@ -60,14 +61,69 @@ api.interceptors.response.use(
   },
 )
 
+// Cache de resposta de busca no sessionStorage — TTL curto, só para proteger
+// contra reenvio acidental do mesmo formulário ou "voltar" no navegador. Não
+// substitui o cache do backend (que é o que evita reprocessar o scraping).
+const CACHE_BUSCA_TTL_MS = 3 * 60 * 1000
+const CACHE_BUSCA_PREFIXO = 'priceradar_busca:'
+
+function chaveCacheBusca(params: BuscaRequest, forcar: boolean): string {
+  return CACHE_BUSCA_PREFIXO + JSON.stringify({ ...params, forcar })
+}
+
+function lerCacheBusca(chave: string): BuscaResponse | null {
+  try {
+    const bruto = sessionStorage.getItem(chave)
+    if (!bruto) return null
+    const { ts, dados } = JSON.parse(bruto) as { ts: number; dados: BuscaResponse }
+    if (Date.now() - ts > CACHE_BUSCA_TTL_MS) {
+      sessionStorage.removeItem(chave)
+      return null
+    }
+    return dados
+  } catch {
+    return null
+  }
+}
+
+function salvarCacheBusca(chave: string, dados: BuscaResponse): void {
+  try {
+    sessionStorage.setItem(chave, JSON.stringify({ ts: Date.now(), dados }))
+  } catch {
+    // sessionStorage indisponível ou cheio — o cache é só conveniência.
+  }
+}
+
 export async function buscarConcorrentes(
   params: BuscaRequest,
   forcar = false,
+  opts: { jobId?: string; signal?: AbortSignal } = {},
 ): Promise<BuscaResponse> {
+  const chave = chaveCacheBusca(params, forcar)
+  if (!forcar) {
+    const emCache = lerCacheBusca(chave)
+    if (emCache) return emCache
+  }
   const { data } = await api.post<BuscaResponse>('/api/buscar', params, {
-    params: forcar ? { forcar: true } : undefined,
+    params: {
+      ...(forcar ? { forcar: true } : {}),
+      ...(opts.jobId ? { job_id: opts.jobId } : {}),
+    },
+    signal: opts.signal,
   })
+  salvarCacheBusca(chave, data)
   return data
+}
+
+/** Progresso por portal de uma busca ao vivo em andamento (polling). */
+export async function consultarProgressoBusca(jobId: string): Promise<ProgressoBusca | null> {
+  try {
+    const { data } = await api.get<ProgressoBusca>(`/api/buscar/jobs/${jobId}`)
+    return data
+  } catch {
+    // 404 = job ainda não criado no backend, ou já expirou — não é erro.
+    return null
+  }
 }
 
 export async function exportarExcel(cidade: string, resultado: BuscaResponse): Promise<void> {
