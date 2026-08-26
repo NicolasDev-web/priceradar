@@ -153,3 +153,11 @@ class ExportRequest(BaseModel):
     cidade: str
     preco_m2_medio: float
     empreendimentos: list[Empreendimento]
+
+
+class LoginRequest(BaseModel):
+    senha: str
+
+
+class LoginResponse(BaseModel):
+    token: str

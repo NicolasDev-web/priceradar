@@ -1,8 +1,14 @@
+import os
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-DATABASE_URL = "sqlite+aiosqlite:///./priceradar.db"
+# Relativo ao diretório de trabalho por padrão — é o que o `.bat` espera, já que
+# ele entra em `backend/` antes de subir o uvicorn. Fora daqui o disco pode ser
+# efêmero: em container, aponte `DATABASE_URL` para dentro do volume, senão o
+# histórico e o referencial MRV somem a cada restart.
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./priceradar.db")
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)

@@ -13,7 +13,7 @@ if sys.platform == "win32":
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 CACHE_MINUTOS = int(os.getenv("CACHE_MINUTOS", "60"))
 
 from database.connection import get_db, init_db
-from models import BuscaRequest, BuscaResponse, ExportRequest
+from models import BuscaRequest, BuscaResponse, ExportRequest, LoginRequest, LoginResponse
 from repositories.busca_repo import (
     buscar_cache_recente,
     buscar_por_id,
@@ -42,6 +42,7 @@ from repositories.empreendimento_repo import (
     preco_m2_historico,
     upsert_referencial_mrv,
 )
+from services.auth import conferir_senha, exigir_login, gerar_token
 from services.bairros import listar_bairros
 from services.export import gerar_excel
 from services.search import executar_busca
@@ -58,13 +59,23 @@ app = FastAPI(title="PriceRadar API", version="2.0.0", lifespan=lifespan)
 
 # Em produção o frontend é servido por este mesmo processo (mesma origem), então
 # CORS não entra em jogo. Estas origens existem só para o desenvolvimento, com o
-# Vite em 5173 e a API aqui em 8002.
+# Vite em 5173 e a API aqui em 8002. `CORS_ORIGINS` (lista separada por vírgula)
+# cobre o caso de o frontend um dia ser servido de outro host.
+_CORS_PADRAO = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
+    allow_origins=[o.strip() for o in os.getenv("CORS_ORIGINS", _CORS_PADRAO).split(",") if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
+    # Sem isto, o front (agora em outra origem) não enxerga o nome do arquivo
+    # que `/api/exportar` manda em Content-Disposition — o browser esconde
+    # headers de resposta do JS a menos que estejam explicitamente expostos.
+    expose_headers=["Content-Disposition"],
 )
+
+# Agrupa as rotas /api/* que exigem login, para não repetir `Depends(exigir_login)`
+# em cada uma. /api/login e /api/health ficam de fora, direto em `app`.
+router_protegido = APIRouter(dependencies=[Depends(exigir_login)])
 
 
 @app.get("/api/health")
@@ -72,7 +83,14 @@ async def health():
     return {"status": "ok", "version": "2.0.0", "timestamp": datetime.now().isoformat()}
 
 
-@app.post("/api/buscar", response_model=BuscaResponse)
+@app.post("/api/login", response_model=LoginResponse)
+async def login(payload: LoginRequest):
+    if not conferir_senha(payload.senha):
+        raise HTTPException(status_code=401, detail="Senha incorreta")
+    return LoginResponse(token=gerar_token())
+
+
+@router_protegido.post("/api/buscar", response_model=BuscaResponse)
 async def buscar(
     request: BuscaRequest,
     forcar: bool = Query(default=False, description="Ignora o cache e refaz o scraping"),
@@ -98,7 +116,7 @@ async def buscar(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/exportar")
+@router_protegido.post("/api/exportar")
 async def exportar(payload: ExportRequest):
     """Gera o Excel a partir dos resultados já buscados (não refaz scraping)."""
     try:
@@ -119,7 +137,7 @@ async def exportar(payload: ExportRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/bairros")
+@router_protegido.get("/api/bairros")
 async def listar_bairros_da_cidade(cidade: str):
     """Bairros com oferta na cidade, para sugerir no formulário."""
     try:
@@ -132,7 +150,7 @@ async def listar_bairros_da_cidade(cidade: str):
 
 # ── Histórico ──────────────────────────────────────────────────────────────────
 
-@app.get("/api/historico")
+@router_protegido.get("/api/historico")
 async def listar_historico(cidade: str | None = None, db: AsyncSession = Depends(get_db)):
     buscas = await listar_buscas(db, cidade=cidade)
     return {
@@ -147,13 +165,13 @@ async def listar_historico(cidade: str | None = None, db: AsyncSession = Depends
     }
 
 
-@app.get("/api/historico/evolucao")
+@router_protegido.get("/api/historico/evolucao")
 async def evolucao_preco(cidade: str, quartos: int | None = None, db: AsyncSession = Depends(get_db)):
     dados = await preco_m2_historico(db, cidade, quartos)
     return {"cidade": cidade, "serie": dados}
 
 
-@app.get("/api/historico/{busca_id}")
+@router_protegido.get("/api/historico/{busca_id}")
 async def detalhe_historico(busca_id: str, db: AsyncSession = Depends(get_db)):
     busca = await buscar_por_id(db, busca_id)
     if not busca:
@@ -161,7 +179,7 @@ async def detalhe_historico(busca_id: str, db: AsyncSession = Depends(get_db)):
     return busca
 
 
-@app.delete("/api/historico/{busca_id}")
+@router_protegido.delete("/api/historico/{busca_id}")
 async def deletar_historico(busca_id: str, db: AsyncSession = Depends(get_db)):
     ok = await deletar_busca(db, busca_id)
     return {"ok": ok}
@@ -169,7 +187,7 @@ async def deletar_historico(busca_id: str, db: AsyncSession = Depends(get_db)):
 
 # ── Referencial MRV ────────────────────────────────────────────────────────────
 
-@app.post("/api/mrv/referencial")
+@router_protegido.post("/api/mrv/referencial")
 async def cadastrar_referencial(
     cidade: str,
     produto: str,
@@ -181,7 +199,7 @@ async def cadastrar_referencial(
     return {"ok": True}
 
 
-@app.get("/api/mrv/referencial")
+@router_protegido.get("/api/mrv/referencial")
 async def consultar_referencial(
     cidade: str,
     quartos: int | None = None,
@@ -189,6 +207,9 @@ async def consultar_referencial(
 ):
     preco = await get_referencial_mrv(db, cidade, quartos)
     return {"cidade": cidade, "quartos": quartos, "preco_m2_mrv": preco}
+
+
+app.include_router(router_protegido)
 
 
 # ── Frontend ───────────────────────────────────────────────────────────────────

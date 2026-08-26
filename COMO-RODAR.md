@@ -124,6 +124,60 @@ Get-NetTCPConnection -LocalPort 8002 -State Listen | ForEach-Object { Stop-Proce
 
 ---
 
+## Deploy
+
+Ainda não há nada publicado. O que existe é a preparação — e uma medição que
+precisa ser feita antes de escolher onde hospedar.
+
+### A pergunta que decide tudo
+
+A coleta é gratuita porque o `curl-cffi` imita a assinatura TLS do Chrome. Os
+portais bloqueiam por TLS, não por User-Agent — mas também podem pontuar por
+reputação de ASN, e as faixas de nuvem (Oracle, AWS, GCP) entram com nota baixa.
+Se o acesso direto cair num IP de datacenter, a coleta passa a depender da
+ScraperAPI: 1.000 créditos/mês no plano grátis, ~40 buscas. Isso muda a
+arquitetura, então é para medir:
+
+```powershell
+# 1. Aqui, para ter a linha de base (já rodado em 17/08/2026 — ver
+#    priceradar\backend\data\sonda-baseline-local.json)
+cd priceradar\backend; venv\Scripts\python.exe scripts\sonda_acesso.py --json base.json
+
+# 2. Na VM da nuvem, no mesmo dia
+python scripts/sonda_acesso.py --json nuvem.json
+
+# 3. Compare
+python scripts/sonda_acesso.py --comparar base.json nuvem.json
+```
+
+Custa 4 requisições e não gasta crédito de proxy. Linha de base de 17/08/2026,
+Fortaleza-CE R$ 280k-500k 2 quartos: vivareal 30, zapimoveis 30, chavesnamao 15,
+imovelweb 27 — todos em 200.
+
+### As duas trilhas
+
+**Se os 4 portais responderem na nuvem** → VM ARM Always Free da Oracle. É o
+único free tier que aguenta os ~340 MB de dependências mais o Chromium, fica
+sempre ligado e tem disco persistente, então o SQLite continua como está. Os
+arquivos já estão prontos na raiz: `Dockerfile`, `docker-compose.yml`,
+`Caddyfile` e `.env.deploy.example`. Na VM:
+
+```bash
+cp .env.deploy.example .env      # preencha DOMINIO, USUARIO e SENHA_HASH
+docker compose up -d --build
+```
+
+O Caddy resolve HTTPS e a autenticação na borda — a aplicação não tem login
+próprio. Atualizar depois: `git pull && docker compose up -d --build`.
+
+**Se algum portal cair para 403** → a coleta fica na rede interna. O acesso
+remoto se resolve com Tailscale (plano grátis cobre 6 usuários): instale nesta
+máquina e nos notebooks, e a URL passa a funcionar de qualquer lugar sem expor
+nada na internet pública. Nesse caso vale transformar o `.bat` em serviço do
+Windows, para sobreviver a reboot.
+
+---
+
 ## Onde ficam as coisas
 
 ```text

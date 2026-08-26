@@ -17,6 +17,49 @@ const BASE_URL = import.meta.env.VITE_API_URL ?? ''
 // timeout de 90s: o scraping via ScraperAPI pode levar alguns segundos por portal
 const api = axios.create({ baseURL: BASE_URL, timeout: 90_000 })
 
+const TOKEN_KEY = 'priceradar_token'
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+function setToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+function limparToken(): void {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
+export async function login(senha: string): Promise<void> {
+  const { data } = await api.post<{ token: string }>('/api/login', { senha })
+  setToken(data.token)
+}
+
+// Anexa o token em toda chamada — nenhuma das funções abaixo (buscarConcorrentes,
+// exportarExcel etc.) precisa saber que autenticação existe.
+api.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) {
+    config.headers = config.headers ?? {}
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+// 401 = token ausente/expirado/inválido. Limpa e avisa a UI — sem refresh
+// (não existe) e sem re-tentar a mesma chamada sozinho.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      limparToken()
+      window.dispatchEvent(new Event('priceradar:sessao-expirada'))
+    }
+    return Promise.reject(error)
+  },
+)
+
 export async function buscarConcorrentes(
   params: BuscaRequest,
   forcar = false,

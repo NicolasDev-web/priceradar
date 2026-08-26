@@ -20,6 +20,8 @@ __pycache__/
 priceradar/backend/data/historico_fontes.json
 # Cache de bairros: acumula com o uso da máquina, regenerável a partir dos portais.
 priceradar/backend/data/bairros_por_cidade.json
+# Medição local da sonda de acesso — específica desta máquina, não faz sentido versionar.
+priceradar/backend/data/sonda-baseline-local.json
 
 # Build do frontend
 dist/

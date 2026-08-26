@@ -1,11 +1,12 @@
 import { AlertTriangle, Clock, Download, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
-import { buscarConcorrentes, exportarExcel } from './api/client'
+import { useEffect, useState } from 'react'
+import { buscarConcorrentes, exportarExcel, getToken } from './api/client'
 import { ComparativoBairros } from './components/ComparativoBairros'
 import { EvolucaoChart } from './components/EvolucaoChart'
 import { HistoricoPanel } from './components/HistoricoPanel'
 import { KpiBar } from './components/KpiBar'
 import { LoadingState } from './components/LoadingState'
+import { Login } from './components/Login'
 import { Mapa } from './components/Mapa'
 import { PriceChart } from './components/PriceChart'
 import { ReferencialMRVForm } from './components/ReferencialMRVForm'
@@ -40,6 +41,15 @@ export default function App() {
   const [ultimaBusca, setUltimaBusca] = useState<BuscaRequest | null>(null)
   const [mostrarHistorico, setMostrarHistorico] = useState(false)
   const [mostrarFormMRV, setMostrarFormMRV] = useState(false)
+  const [autenticado, setAutenticado] = useState(() => !!getToken())
+
+  useEffect(() => {
+    function aoExpirar() {
+      setAutenticado(false)
+    }
+    window.addEventListener('priceradar:sessao-expirada', aoExpirar)
+    return () => window.removeEventListener('priceradar:sessao-expirada', aoExpirar)
+  }, [])
 
   const fontesErro = resultado?.diagnostico?.fontes_erro ?? []
   const coletaFalhou = (resultado?.diagnostico?.fontes_ok.length ?? 0) === 0
@@ -104,6 +114,10 @@ export default function App() {
     if (ultimaBusca) {
       await handleBuscar(ultimaBusca)
     }
+  }
+
+  if (!autenticado) {
+    return <Login onAutenticado={() => setAutenticado(true)} />
   }
 
   return (

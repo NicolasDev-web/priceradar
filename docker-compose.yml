@@ -1,0 +1,41 @@
+# Deploy do PriceRadar numa VM (Trilha A do plano de deploy).
+#
+# Antes de subir, copie `.env.deploy.example` para `.env` ao lado deste arquivo.
+#
+#     docker compose up -d --build
+#
+# Atualizar depois de um `git pull`: o mesmo comando.
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      # O container é descartável; este volume não é. Aqui moram o SQLite
+      # (histórico, cache de buscas e o referencial MRV digitado à mão), os
+      # dois caches JSON e o perfil do Chromium.
+      - priceradar-dados:/data
+    # Sem portas publicadas: quem fala com a internet é o Caddy. A aplicação
+    # não tem login próprio, então deixá-la exposta direto seria deixá-la aberta.
+    expose:
+      - "8002"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificados do Let's Encrypt. Sem persistir, cada restart pede um
+      # certificado novo e o rate limit do Let's Encrypt fecha a porta.
+      - caddy-dados:/data
+    depends_on:
+      - app
+
+volumes:
+  priceradar-dados:
+  caddy-dados:

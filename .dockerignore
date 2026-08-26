@@ -1,0 +1,33 @@
+# Ambientes e dependências — reinstalados dentro da imagem.
+# O venv é de Windows: copiá-lo para um container Linux não só é inútil como
+# quebra, porque os binários não são os mesmos.
+**/venv/
+**/.venv/
+**/node_modules/
+**/__pycache__/
+**/*.py[cod]
+
+# Build local do frontend: o estágio Node gera o seu próprio.
+**/dist/
+**/.vite/
+
+# Estado de runtime — vive no volume /data, não na imagem.
+*.db
+*.db-journal
+*.sqlite
+priceradar/backend/data/
+.priceradar_browser_profile/
+
+# Segredos: as variáveis vêm do ambiente do host, nunca da imagem.
+.env
+*.env
+!**/.env.example
+
+# Artefatos que só existem na máquina de desenvolvimento.
+.git/
+.claude/
+graphify-out/
+**/screenshots/
+*.log
+*.xlsx
+iniciar-priceradar.bat

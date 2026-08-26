@@ -12,6 +12,8 @@ import json
 import logging
 import os
 import pathlib
+import tempfile
+import threading
 import unicodedata
 from datetime import datetime
 
@@ -24,6 +26,11 @@ _HISTORICO_PATH = pathlib.Path(os.getenv(
 
 # Mínimo de entradas por fonte para confiar no RF
 _MIN_RF_ENTRADAS = 10
+
+# Cada portal de cada busca reescreve o arquivo inteiro. Duas buscas simultâneas
+# fariam read-modify-write no mesmo JSON e a última apagaria o que a primeira
+# registrou. Mesmo cuidado que `services/bairros.py` já toma.
+_LOCK_HISTORICO = threading.Lock()
 
 
 def _sem_acento(texto: str) -> str:
@@ -41,35 +48,53 @@ def _carregar_historico() -> dict:
 
 
 def _salvar_historico(historico: dict) -> None:
-    _HISTORICO_PATH.parent.mkdir(parents=True, exist_ok=True)
+    """Grava num temporário e renomeia — `os.replace` é atômico, `write_text` não.
+
+    Sem isso, um crash no meio da escrita deixa JSON truncado; `_carregar_historico`
+    engole a exceção e devolve `{}`, zerando em silêncio o histórico de todas as
+    fontes — e com ele a priorização por RF.
+    """
     try:
-        _HISTORICO_PATH.write_text(json.dumps(historico, ensure_ascii=False, indent=2), encoding="utf-8")
+        _HISTORICO_PATH.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporario = tempfile.mkstemp(dir=str(_HISTORICO_PATH.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(historico, f, ensure_ascii=False, indent=2)
+            os.replace(temporario, _HISTORICO_PATH)
+        except Exception:
+            pathlib.Path(temporario).unlink(missing_ok=True)
+            raise
     except Exception as e:
         logger.warning(f"Não foi possível salvar histórico: {e}")
 
 
 def registrar_resultado(portal: str, cidade: str, preco_min: float, preco_max: float, quartos: int | None, n_resultados: int) -> None:
     """Registra o resultado de uma busca no histórico persistente."""
-    historico = _carregar_historico()
     cidade_norm = _sem_acento(cidade.split(",")[0])
-
     chave = f"{portal}::{cidade_norm}"
-    if chave not in historico:
-        historico[chave] = {"portal": portal, "cidade": cidade_norm, "entradas": []}
+    agora = datetime.now()
 
-    historico[chave]["entradas"].append({
-        "ts": datetime.now().isoformat(),
-        "preco_min": preco_min,
-        "preco_max": preco_max,
-        "quartos": quartos,
-        "hora": datetime.now().hour,
-        "n_resultados": n_resultados,
-        "teve_resultado": n_resultados > 0,
-    })
+    # Ler, alterar e gravar tem que ser um bloco só: fora do lock, duas buscas
+    # simultâneas leem a mesma versão e a segunda grava por cima da primeira.
+    with _LOCK_HISTORICO:
+        historico = _carregar_historico()
 
-    # Mantém apenas as últimas 200 entradas por fonte/cidade
-    historico[chave]["entradas"] = historico[chave]["entradas"][-200:]
-    _salvar_historico(historico)
+        if chave not in historico:
+            historico[chave] = {"portal": portal, "cidade": cidade_norm, "entradas": []}
+
+        historico[chave]["entradas"].append({
+            "ts": agora.isoformat(),
+            "preco_min": preco_min,
+            "preco_max": preco_max,
+            "quartos": quartos,
+            "hora": agora.hour,
+            "n_resultados": n_resultados,
+            "teve_resultado": n_resultados > 0,
+        })
+
+        # Mantém apenas as últimas 200 entradas por fonte/cidade
+        historico[chave]["entradas"] = historico[chave]["entradas"][-200:]
+        _salvar_historico(historico)
 
 
 def _taxa_sucesso(entradas: list[dict]) -> float:

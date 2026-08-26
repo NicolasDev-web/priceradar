@@ -1,0 +1,30 @@
+# HTTPS e autenticação na borda.
+#
+# A autenticação fica aqui, e não no FastAPI, porque só a Trilha A precisa
+# dela: na Trilha B (Tailscale) a rede já é privada e um login seria cerimônia
+# sem ganho. Mantendo-a no Caddy, o código da aplicação continua idêntico nas
+# duas trilhas.
+
+{$DOMINIO} {
+	# Certificado do Let's Encrypt, automático. Exige que {$DOMINIO} aponte para
+	# o IP desta VM e que as portas 80 e 443 estejam abertas — nas duas pontas:
+	# no Security List da VCN da Oracle *e* no iptables da própria imagem Ubuntu,
+	# que vem com tudo fechado por padrão e é o passo que costuma ser esquecido.
+	# Sem domínio próprio, um subdomínio gratuito (DuckDNS, por exemplo) serve.
+
+	# Gere o hash com:  docker run --rm caddy:2-alpine caddy hash-password
+	basic_auth {
+		{$USUARIO} {$SENHA_HASH}
+	}
+
+	reverse_proxy app:8002 {
+		# Uma busca completa leva de 30 a 90 s: são 4 portais, o ChavesNaMão
+		# varre 12 páginas e há jitter deliberado entre requisições. O default
+		# do Caddy cortaria a conexão no meio da coleta.
+		transport http {
+			response_header_timeout 120s
+		}
+	}
+
+	encode gzip
+}
