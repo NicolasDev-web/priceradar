@@ -28,7 +28,7 @@ export function LoadingState({ jobId = null }: Props) {
           <div
             role="img"
             aria-label="Bonequinho correndo, indicando que a busca está em andamento"
-            className="shrink-0 motion-safe:animate-sprite-run"
+            className="shrink-0 animate-sprite-run"
             style={{
               height: 68,
               aspectRatio: `${SPRITE_FRAME_W} / ${SPRITE_FRAME_H}`,
