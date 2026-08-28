@@ -1,12 +1,12 @@
-import corredorGif from '../assets/sprites/corredor.gif'
+import corredorWebp from '../assets/sprites/corredor.webp'
 import { LABEL_PORTAL } from '../data/portais'
 import { useBuscaProgress } from '../hooks/useBuscaProgress'
 
-// GIF animado do bonequinho correndo (8 quadros, ~0,7s por ciclo). O browser
+// WebP animado do bonequinho correndo (8 quadros, ~0,7s por ciclo). O browser
 // anima sozinho — não passa por prefers-reduced-motion, mas aqui ele é o
 // indicador de progresso da busca, não enfeite, então roda sempre.
-const CORREDOR_W = 268
-const CORREDOR_H = 397
+const CORREDOR_W = 131
+const CORREDOR_H = 192
 
 interface Props {
   /** Id da busca em andamento — liga o polling de progresso por portal. */
@@ -25,7 +25,7 @@ export function LoadingState({ jobId = null }: Props) {
         <div className="flex items-center gap-3">
           {/* Bonequinho correndo — símbolo de progresso enquanto os portais respondem */}
           <img
-            src={corredorGif}
+            src={corredorWebp}
             alt="Bonequinho correndo, indicando que a busca está em andamento"
             width={CORREDOR_W}
             height={CORREDOR_H}
