@@ -1,13 +1,12 @@
-import corredorSprite from '../assets/sprites/corredor.png'
+import corredorGif from '../assets/sprites/corredor.gif'
 import { LABEL_PORTAL } from '../data/portais'
 import { useBuscaProgress } from '../hooks/useBuscaProgress'
 
-// Recortado/alinhado a partir do spritesheet fonte por um script one-off
-// (Pillow/numpy) — ver plano de arquitetura de busca. Mudar esses números
-// exige regerar o asset, não só editar aqui.
-const SPRITE_FRAMES = 8
-const SPRITE_FRAME_W = 120
-const SPRITE_FRAME_H = 178
+// GIF animado do bonequinho correndo (8 quadros, ~0,7s por ciclo). O browser
+// anima sozinho — não passa por prefers-reduced-motion, mas aqui ele é o
+// indicador de progresso da busca, não enfeite, então roda sempre.
+const CORREDOR_W = 268
+const CORREDOR_H = 397
 
 interface Props {
   /** Id da busca em andamento — liga o polling de progresso por portal. */
@@ -25,18 +24,13 @@ export function LoadingState({ jobId = null }: Props) {
       <div className="flex flex-col items-center gap-2 justify-center py-3">
         <div className="flex items-center gap-3">
           {/* Bonequinho correndo — símbolo de progresso enquanto os portais respondem */}
-          <div
-            role="img"
-            aria-label="Bonequinho correndo, indicando que a busca está em andamento"
-            className="shrink-0 animate-sprite-run"
-            style={{
-              height: 68,
-              aspectRatio: `${SPRITE_FRAME_W} / ${SPRITE_FRAME_H}`,
-              backgroundImage: `url(${corredorSprite})`,
-              backgroundSize: `${SPRITE_FRAMES * 100}% 100%`,
-              backgroundRepeat: 'no-repeat',
-              imageRendering: 'pixelated',
-            }}
+          <img
+            src={corredorGif}
+            alt="Bonequinho correndo, indicando que a busca está em andamento"
+            width={CORREDOR_W}
+            height={CORREDOR_H}
+            className="shrink-0 h-[68px] w-auto"
+            style={{ imageRendering: 'pixelated' }}
           />
           <span className="text-sm font-medium text-mrv-text-muted tracking-wide">
             Varrendo portais imobiliários
