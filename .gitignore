@@ -2,6 +2,11 @@
 .env
 *.env
 !.env.example
+# .env.development/.env.production ficam versionados (só têm URL pública),
+# mas .env.local é onde entram chaves de verdade (ex.: VITE_CARTO_API_KEY) —
+# Vite já lê esse nome automaticamente, em qualquer modo.
+.env.local
+.env.*.local
 
 # Fica só na máquina: contém o endereço de acesso da rede interna.
 RESUMO_PROJETO.md

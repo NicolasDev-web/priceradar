@@ -56,8 +56,18 @@ const PORTAL_LABEL: Record<string, string> = {
 }
 
 /** Mesmos dados do OpenStreetMap, desenhados para fundo escuro. O tile branco
- *  padrão brilharia como um retângulo de luz no meio do painel. */
-const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+ *  padrão brilharia como um retângulo de luz no meio do painel.
+ *
+ *  A CARTO aposentou o acesso livre aos tiles raster — sem `key` na URL, o
+ *  "tile" que volta é uma imagem escrita "API KEY REQUIRED" por cima (o nome
+ *  do parâmetro é `key`, não `api_key` — a doc oficial usa os dois nomes em
+ *  lugares diferentes, só `key` funciona de fato, testado). A chave é
+ *  gratuita (5M tiles/mês): carto.com/basemaps/apikey. Fica em `.env.local`
+ *  (nunca commitado), não em `.env.production`. */
+const CARTO_API_KEY = import.meta.env.VITE_CARTO_API_KEY as string | undefined
+const TILE_URL = CARTO_API_KEY
+  ? `https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`
+  : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
 const TILE_ATTR =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
   '&copy; <a href="https://carto.com/attributions">CARTO</a>'

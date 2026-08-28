@@ -78,12 +78,19 @@ copy .env.example .env
 # Frontend
 cd ..\frontend
 npm install
+echo VITE_CARTO_API_KEY=cole-aqui-a-chave-gratuita > .env.local
 npm run build
 ```
 
 O `.env` **não** é versionado. O `.env.example` documenta cada variável com o motivo do
 valor padrão — vale ler antes de mudar qualquer coisa. Só a `SCRAPERAPI_KEY` fica em
 branco (opcional: é o nível 2 de acesso, usado só quando o direto falha).
+
+O `.env.local` do frontend também não é versionado — é onde fica a `VITE_CARTO_API_KEY`,
+a chave (gratuita) que o mapa usa para buscar os tiles escuros. Sem ela, o mapa some
+os quarteirões e mostra "API KEY REQUIRED" por cima. Gere a sua em
+[carto.com/basemaps/apikey](https://carto.com/basemaps/apikey) (só e-mail e domínio,
+sem cartão).
 
 O banco (`priceradar.db`) e as migrações se criam sozinhos ao subir o servidor.
 
