@@ -6,8 +6,8 @@ import { useBuscaProgress } from '../hooks/useBuscaProgress'
 // (Pillow/numpy) — ver plano de arquitetura de busca. Mudar esses números
 // exige regerar o asset, não só editar aqui.
 const SPRITE_FRAMES = 8
-const SPRITE_FRAME_W = 89
-const SPRITE_FRAME_H = 136
+const SPRITE_FRAME_W = 120
+const SPRITE_FRAME_H = 178
 
 interface Props {
   /** Id da busca em andamento — liga o polling de progresso por portal. */
