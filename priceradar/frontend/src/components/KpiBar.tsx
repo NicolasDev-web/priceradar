@@ -1,10 +1,13 @@
 import { Edit3, TrendingDown, TrendingUp, Minus } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { BuscaResponse } from '../types'
 
 interface Props {
   dados: BuscaResponse
   onEditarMRV?: () => void
 }
+
+const FLASH_MS = 600
 
 function formatarMoeda(valor: number): string {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0, maximumFractionDigits: 0 })
@@ -26,11 +29,26 @@ export function KpiBar({ dados, onEditarMRV }: Props) {
   const precoReferencia = dados.preco_m2_mediana || dados.preco_m2_medio
   const delta = dados.preco_m2_mrv ? calcularDelta(dados.preco_m2_mrv, precoReferencia) : null
 
+  // Pisca os cards quando `dados` muda de verdade (reabrir busca, salvar
+  // referencial) — nunca na primeira renderização, pra não piscar ao entrar.
+  const primeiraRenderizacao = useRef(true)
+  const [flash, setFlash] = useState(false)
+  useEffect(() => {
+    if (primeiraRenderizacao.current) {
+      primeiraRenderizacao.current = false
+      return
+    }
+    setFlash(true)
+    const timer = setTimeout(() => setFlash(false), FLASH_MS)
+    return () => clearTimeout(timer)
+  }, [dados])
+  const flashCls = flash ? 'motion-safe:animate-kpi-flash' : ''
+
   return (
     <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
 
       {/* Total de Concorrentes — destaque primário */}
-      <div className="bg-mrv-green border border-mrv-green-light rounded-card shadow-kpi p-5 flex flex-col justify-between relative overflow-hidden">
+      <div className={`bg-mrv-green border border-mrv-green-light rounded-card shadow-kpi p-5 flex flex-col justify-between relative overflow-hidden ${flashCls}`}>
         {/* Detalhe de fundo sutil */}
         <div className="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-white/5" />
         <div className="absolute -right-2 -top-2 w-10 h-10 rounded-full bg-white/5" />
@@ -50,7 +68,7 @@ export function KpiBar({ dados, onEditarMRV }: Props) {
       {/* Preço/m² mediano — número de referência.
           Mediana e não média: um único anúncio com área agregada ou erro de
           parsing desloca a média, mas não a mediana. */}
-      <div className="bg-mrv-surface border border-mrv-border rounded-card shadow-kpi p-5 flex flex-col justify-between">
+      <div className={`bg-mrv-surface border border-mrv-border rounded-card shadow-kpi p-5 flex flex-col justify-between ${flashCls}`}>
         <div>
           <p className="text-[10px] font-semibold text-mrv-text-dim uppercase tracking-[0.12em] mb-3">
             Preço/m² mediano
@@ -66,7 +84,7 @@ export function KpiBar({ dados, onEditarMRV }: Props) {
       </div>
 
       {/* Menor preço/m² */}
-      <div className="bg-mrv-surface border border-mrv-border rounded-card shadow-kpi p-5 flex flex-col justify-between">
+      <div className={`bg-mrv-surface border border-mrv-border rounded-card shadow-kpi p-5 flex flex-col justify-between ${flashCls}`}>
         <div>
           <p className="text-[10px] font-semibold text-mrv-text-dim uppercase tracking-[0.12em] mb-3">
             Menor preço/m²
@@ -82,7 +100,7 @@ export function KpiBar({ dados, onEditarMRV }: Props) {
       </div>
 
       {/* Maior preço/m² */}
-      <div className="bg-mrv-surface border border-mrv-border rounded-card shadow-kpi p-5 flex flex-col justify-between">
+      <div className={`bg-mrv-surface border border-mrv-border rounded-card shadow-kpi p-5 flex flex-col justify-between ${flashCls}`}>
         <div>
           <p className="text-[10px] font-semibold text-mrv-text-dim uppercase tracking-[0.12em] mb-3">
             Maior preço/m²
@@ -98,7 +116,7 @@ export function KpiBar({ dados, onEditarMRV }: Props) {
       </div>
 
       {/* Referencial MRV */}
-      <div className="bg-mrv-surface border border-mrv-orange/30 rounded-card shadow-kpi p-5 flex flex-col justify-between relative">
+      <div className={`bg-mrv-surface border border-mrv-orange/30 rounded-card shadow-kpi p-5 flex flex-col justify-between relative ${flashCls}`}>
         <div>
           <div className="flex items-start justify-between mb-3">
             <p className="text-[10px] font-semibold text-mrv-text-dim uppercase tracking-[0.12em]">

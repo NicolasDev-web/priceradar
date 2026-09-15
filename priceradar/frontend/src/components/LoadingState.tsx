@@ -29,12 +29,12 @@ export function LoadingState({ jobId = null }: Props) {
             alt="Bonequinho correndo, indicando que a busca está em andamento"
             width={CORREDOR_W}
             height={CORREDOR_H}
-            className="shrink-0 h-[68px] w-auto"
+            className="corredor-sprite shrink-0 h-[68px] w-auto"
             style={{ imageRendering: 'pixelated' }}
           />
           <span className="text-sm font-medium text-mrv-text-muted tracking-wide">
             Varrendo portais imobiliários
-            <span className="inline-flex gap-0.5 ml-1">
+            <span className="progresso-pontos inline-flex gap-0.5 ml-1">
               <span className="animate-bounce [animation-delay:0ms]">.</span>
               <span className="animate-bounce [animation-delay:150ms]">.</span>
               <span className="animate-bounce [animation-delay:300ms]">.</span>

@@ -27,6 +27,9 @@ export default function App() {
   const [resultado, setResultado] = useState<BuscaResponse | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [ultimaBusca, setUltimaBusca] = useState<BuscaRequest | null>(null)
+  // Muda a cada busca bem-sucedida — usado como `key` do grid de resultados
+  // para forçar remontagem e replay do stagger de entrada dos cards.
+  const [buscaVersion, setBuscaVersion] = useState(0)
   const [mostrarHistorico, setMostrarHistorico] = useState(false)
   const [mostrarFormMRV, setMostrarFormMRV] = useState(false)
   const [autenticado, setAutenticado] = useState(() => !!getToken())
@@ -62,6 +65,7 @@ export default function App() {
     try {
       const dados = await buscarConcorrentes(params, forcar, { jobId: idDoJob, signal: controller.signal })
       setResultado(dados)
+      setBuscaVersion(v => v + 1)
     } catch (e: unknown) {
       if (axios.isCancel(e)) return // busca cancelada por um reenvio — não é erro
 
@@ -185,7 +189,7 @@ export default function App() {
         <SearchForm onBuscar={handleBuscar} loading={loading} />
 
         {erro && (
-          <div className="bg-red-950/60 border border-red-800/50 text-red-300 rounded-card px-5 py-4 text-sm whitespace-pre-line mb-6">
+          <div className="bg-red-950/60 border border-red-800/50 text-red-300 rounded-card px-5 py-4 text-sm whitespace-pre-line mb-6 motion-safe:animate-fade-up">
             <strong className="text-red-200">Erro:</strong> {erro}
           </div>
         )}
@@ -253,7 +257,7 @@ export default function App() {
             ) : (
               <>
                 {resultado.do_cache && (
-                  <div className="flex items-center justify-between gap-3 bg-mrv-surface border border-mrv-border rounded-card px-4 py-3 mb-4">
+                  <div className="flex items-center justify-between gap-3 bg-mrv-surface border border-mrv-border rounded-card px-4 py-3 mb-4 motion-safe:animate-fade-up">
                     <p className="text-sm text-mrv-text-muted">
                       <span className="font-semibold text-mrv-orange">Cache ativo.</span>{' '}
                       Dados coletados recentemente. Atualize para nova varredura.
@@ -273,7 +277,7 @@ export default function App() {
                 {/* Coleta parcial: há resultado, mas alguma fonte falhou.
                     O número é utilizável, só que sobre uma amostra menor. */}
                 {coletaParcial && (
-                  <div className="flex items-start gap-2.5 bg-amber-950/40 border border-amber-800/40 rounded-card px-4 py-3 mb-4">
+                  <div className="flex items-start gap-2.5 bg-amber-950/40 border border-amber-800/40 rounded-card px-4 py-3 mb-4 motion-safe:animate-fade-up">
                     <AlertTriangle size={15} className="text-amber-400 flex-shrink-0 mt-0.5" />
                     <p className="text-sm text-amber-200/90 leading-relaxed">
                       <span className="font-semibold">Coleta parcial.</span>{' '}
@@ -288,7 +292,7 @@ export default function App() {
                     estoque. A mediana de 5 anúncios não sustenta uma decisão de
                     preço, e o número sozinho não deixa isso evidente. */}
                 {resultado.total < MINIMO_AMOSTRA_CONFIAVEL && (
-                  <div className="flex items-start gap-2.5 bg-amber-950/40 border border-amber-800/40 rounded-card px-4 py-3 mb-4">
+                  <div className="flex items-start gap-2.5 bg-amber-950/40 border border-amber-800/40 rounded-card px-4 py-3 mb-4 motion-safe:animate-fade-up">
                     <AlertTriangle size={15} className="text-amber-400 flex-shrink-0 mt-0.5" />
                     <p className="text-sm text-amber-200/90 leading-relaxed">
                       <span className="font-semibold">Amostra pequena ({resultado.total} anúncios).</span>{' '}
@@ -342,12 +346,13 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
-                  {resultado.empreendimentos.map(emp => (
+                <div key={buscaVersion} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
+                  {resultado.empreendimentos.map((emp, i) => (
                     <ResultCard
                       key={emp.id}
                       empreendimento={emp}
                       precoM2Medio={resultado.preco_m2_medio}
+                      indice={i}
                     />
                   ))}
                 </div>
@@ -369,10 +374,7 @@ export default function App() {
                 <div className="w-2 h-2 rounded-full bg-mrv-orange shadow-[0_0_8px_2px_rgba(243,146,0,0.4)]" />
               </div>
               {/* Varredura rotativa */}
-              <div
-                className="absolute inset-0 rounded-full overflow-hidden"
-                style={{ animation: 'spin 3s linear infinite' }}
-              >
+              <div className="absolute inset-0 rounded-full overflow-hidden motion-safe:animate-radar-spin">
                 <div
                   className="absolute bottom-1/2 left-1/2 w-px origin-bottom"
                   style={{
@@ -384,10 +386,9 @@ export default function App() {
               </div>
               {/* Setor iluminado */}
               <div
-                className="absolute inset-0 rounded-full"
+                className="absolute inset-0 rounded-full motion-safe:animate-radar-spin"
                 style={{
                   background: 'conic-gradient(from 0deg, rgba(11,90,66,0.15) 0deg, transparent 60deg)',
-                  animation: 'spin 3s linear infinite',
                 }}
               />
             </div>
@@ -405,17 +406,21 @@ export default function App() {
         PriceRadar v2.0 · MRV Engenharia
       </footer>
 
-      {/* Modais / Painéis */}
-      {mostrarHistorico && ultimaBusca && (
+      {/* Modais / Painéis. Ficam montados sempre que há uma cidade de
+          referência — quem decide aberto/fechado é `isOpen`, para a
+          animação de saída poder tocar antes do componente sumir do DOM. */}
+      {ultimaBusca && (
         <HistoricoPanel
+          isOpen={mostrarHistorico}
           cidade={ultimaBusca.cidade}
           onReabrir={handleReabrirHistorico}
           onFechar={() => setMostrarHistorico(false)}
         />
       )}
 
-      {mostrarFormMRV && ultimaBusca && (
+      {ultimaBusca && (
         <ReferencialMRVForm
+          isOpen={mostrarFormMRV}
           cidade={ultimaBusca.cidade}
           quartos={ultimaBusca.quartos}
           onSalvo={handleMRVSalvo}

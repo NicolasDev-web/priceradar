@@ -6,7 +6,14 @@ import { VariacaoMRVBadge } from './VariacaoMRVBadge'
 interface Props {
   empreendimento: Empreendimento
   precoM2Medio: number
+  /** Posição no grid — usada só para escalonar a entrada (stagger). */
+  indice?: number
 }
+
+// Acima disso, todo card entra junto — sem isso, um resultado grande (30+)
+// faria o último card só aparecer segundos depois do primeiro.
+const STAGGER_MAX_INDICE = 10
+const STAGGER_STEP_MS = 25
 
 function formatarMoeda(valor: number): string {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0, maximumFractionDigits: 0 })
@@ -80,9 +87,10 @@ function RfScoreIndicator({ score }: { score: number }) {
   )
 }
 
-export function ResultCard({ empreendimento: e, precoM2Medio }: Props) {
+export function ResultCard({ empreendimento: e, precoM2Medio, indice = 0 }: Props) {
   const pos = calcularPosicionamento(e.preco_m2, precoM2Medio)
   const portalCfg = PORTAL_MAP[e.portal] ?? { label: e.portal, color: 'bg-mrv-surface-2 text-mrv-text-muted' }
+  const atrasoStagger = Math.min(indice, STAGGER_MAX_INDICE) * STAGGER_STEP_MS
 
   const nomePrincipal =
     e.nome_empreendimento && e.nome_empreendimento !== e.nome_anuncio
@@ -94,7 +102,10 @@ export function ResultCard({ empreendimento: e, precoM2Medio }: Props) {
       : null
 
   return (
-    <div className="bg-mrv-surface border border-mrv-border rounded-card shadow-card hover:shadow-card-hover hover:border-mrv-surface-2 transition-all duration-200 overflow-hidden flex group">
+    <div
+      className="bg-mrv-surface border border-mrv-border rounded-card shadow-card hover:shadow-card-hover hover:border-mrv-surface-2 transition-all duration-200 overflow-hidden flex group motion-safe:animate-fade-up"
+      style={{ animationDelay: `${atrasoStagger}ms` }}
+    >
 
       {/* Barra lateral de posicionamento — encode a informação de preço relativo */}
       <div className={`w-1 flex-shrink-0 ${pos.barColor} opacity-80 group-hover:opacity-100 transition-opacity`} />

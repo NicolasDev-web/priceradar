@@ -33,6 +33,21 @@
   }
 }
 
+/* Rede de segurança para prefers-reduced-motion: a maioria das animações já
+   usa o variant `motion-safe:` do Tailwind (não aplica sob reduced-motion),
+   mas isso cobre qualquer `animation`/`transition` que escape dessa
+   convenção. O bonequinho de loading (WebP) e os pontinhos de progresso
+   ficam de fora de propósito — são indicador funcional de busca em
+   andamento, não enfeite, e devem continuar rodando. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.corredor-sprite):not(.progresso-pontos):not(.progresso-pontos *) {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Scrollbar customizada para tema dark */
 ::-webkit-scrollbar {
   width: 5px;

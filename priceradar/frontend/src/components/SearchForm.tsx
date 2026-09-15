@@ -158,7 +158,7 @@ export function SearchForm({ onBuscar, loading }: Props) {
             className={inputBase}
           />
           {mostrarSugestoes && sugestoes.length > 0 && (
-            <ul className="absolute z-20 left-0 right-0 mt-1 bg-mrv-surface-2 border border-mrv-border rounded-card shadow-xl overflow-hidden max-h-64 overflow-y-auto">
+            <ul className="absolute z-20 left-0 right-0 mt-1 bg-mrv-surface-2 border border-mrv-border rounded-card shadow-xl overflow-hidden max-h-64 overflow-y-auto motion-safe:animate-fade-up">
               {sugestoes.map(([nome, uf]) => (
                 <li key={`${nome}-${uf}`}>
                   <button
@@ -221,7 +221,7 @@ export function SearchForm({ onBuscar, loading }: Props) {
           {/* Bairros da cidade escolhida, vindos dos próprios portais —
               são os que têm oferta, não uma lista administrativa. */}
           {mostrarBairros && sugestoesBairro.length > 0 && (
-            <ul className="absolute z-20 left-0 right-0 mt-1 bg-mrv-surface-2 border border-mrv-border rounded-card shadow-xl overflow-hidden max-h-56 overflow-y-auto">
+            <ul className="absolute z-20 left-0 right-0 mt-1 bg-mrv-surface-2 border border-mrv-border rounded-card shadow-xl overflow-hidden max-h-56 overflow-y-auto motion-safe:animate-fade-up">
               {sugestoesBairro.map(b => (
                 <li key={b}>
                   <button

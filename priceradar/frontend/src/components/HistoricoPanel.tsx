@@ -1,9 +1,15 @@
 import { ChevronRight, Clock, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { deletarHistorico, listarHistorico } from '../api/client'
+import { useDelayedUnmount } from '../hooks/useDelayedUnmount'
 import type { BuscaSalva } from '../types'
 
+// Precisa bater com a duração de `drawer-out` no tailwind.config.ts — senão
+// o painel some no meio da animação de saída ou fica um frame parado no fim.
+const DRAWER_EXIT_MS = 180
+
 interface Props {
+  isOpen: boolean
   cidade: string
   onReabrir: (busca: BuscaSalva) => void
   onFechar: () => void
@@ -17,9 +23,10 @@ function formatarMoeda(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0 })
 }
 
-export function HistoricoPanel({ cidade, onReabrir, onFechar }: Props) {
+export function HistoricoPanel({ isOpen, cidade, onReabrir, onFechar }: Props) {
   const [buscas, setBuscas] = useState<BuscaSalva[]>([])
   const [carregando, setCarregando] = useState(true)
+  const mounted = useDelayedUnmount(isOpen, DRAWER_EXIT_MS)
 
   useEffect(() => {
     listarHistorico(cidade)
@@ -33,8 +40,14 @@ export function HistoricoPanel({ cidade, onReabrir, onFechar }: Props) {
     setBuscas(prev => prev.filter(b => b.id !== id))
   }
 
+  if (!mounted) return null
+
   return (
-    <div className="fixed inset-y-0 right-0 w-full max-w-sm bg-mrv-surface border-l border-mrv-border z-40 flex flex-col shadow-[−4px_0_32px_rgba(0,0,0,0.5)]">
+    <div
+      className={`fixed inset-y-0 right-0 w-full max-w-sm bg-mrv-surface border-l border-mrv-border z-40 flex flex-col shadow-[−4px_0_32px_rgba(0,0,0,0.5)] ${
+        isOpen ? 'motion-safe:animate-drawer-in' : 'motion-safe:animate-drawer-out'
+      }`}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-mrv-border">
         <div className="flex items-center gap-2 text-mrv-text">

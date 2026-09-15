@@ -1,8 +1,14 @@
 import { X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { cadastrarReferencialMRV } from '../api/client'
+import { useDelayedUnmount } from '../hooks/useDelayedUnmount'
+
+// Precisa bater com a duração de `modal-out`/`backdrop-out` no
+// tailwind.config.ts — senão o modal some no meio da animação de saída.
+const MODAL_EXIT_MS = 150
 
 interface Props {
+  isOpen: boolean
   cidade: string
   quartos: number | null
   onSalvo: () => void
@@ -14,11 +20,21 @@ function formatarMilhar(valor: string): string {
   return nums.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
 }
 
-export function ReferencialMRVForm({ cidade, quartos, onSalvo, onFechar }: Props) {
+export function ReferencialMRVForm({ isOpen, cidade, quartos, onSalvo, onFechar }: Props) {
   const [produto, setProduto] = useState('')
   const [precoM2, setPrecoM2] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const mounted = useDelayedUnmount(isOpen, MODAL_EXIT_MS)
+
+  useEffect(() => {
+    if (!isOpen) return
+    function aoTeclar(e: KeyboardEvent) {
+      if (e.key === 'Escape') onFechar()
+    }
+    window.addEventListener('keydown', aoTeclar)
+    return () => window.removeEventListener('keydown', aoTeclar)
+  }, [isOpen, onFechar])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -42,9 +58,19 @@ export function ReferencialMRVForm({ cidade, quartos, onSalvo, onFechar }: Props
 
   const labelCls = 'block text-[10px] font-semibold text-mrv-text-dim mb-1.5 uppercase tracking-[0.1em]'
 
+  if (!mounted) return null
+
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-mrv-surface border border-mrv-border rounded-panel w-full max-w-md shadow-card-hover">
+    <div
+      className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${
+        isOpen ? 'motion-safe:animate-backdrop-in' : 'motion-safe:animate-backdrop-out'
+      }`}
+    >
+      <div
+        className={`bg-mrv-surface border border-mrv-border rounded-panel w-full max-w-md shadow-card-hover ${
+          isOpen ? 'motion-safe:animate-modal-in' : 'motion-safe:animate-modal-out'
+        }`}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-mrv-border">
           <div>

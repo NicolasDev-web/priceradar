@@ -73,6 +73,14 @@ const config: Config = {
         'blink': 'blink 1.2s step-end infinite',
         'slide-in': 'slideIn 0.2s ease-out',
         'fade-up': 'fadeUp 0.3s ease-out',
+        'radar-spin': 'spin 3s linear infinite',
+        'drawer-in': 'drawerIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+        'drawer-out': 'drawerOut 0.18s ease-in forwards',
+        'modal-in': 'modalIn 0.2s ease-out',
+        'modal-out': 'modalOut 0.15s ease-in forwards',
+        'backdrop-in': 'backdropIn 0.2s ease-out',
+        'backdrop-out': 'backdropOut 0.15s ease-in forwards',
+        'kpi-flash': 'kpiFlash 0.6s ease-out',
       },
       keyframes: {
         scan: {
@@ -90,6 +98,35 @@ const config: Config = {
         fadeUp: {
           from: { opacity: '0', transform: 'translateY(6px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        drawerIn: {
+          from: { transform: 'translateX(100%)' },
+          to: { transform: 'translateX(0)' },
+        },
+        drawerOut: {
+          from: { transform: 'translateX(0)' },
+          to: { transform: 'translateX(100%)' },
+        },
+        modalIn: {
+          from: { opacity: '0', transform: 'scale(0.96) translateY(4px)' },
+          to: { opacity: '1', transform: 'scale(1) translateY(0)' },
+        },
+        modalOut: {
+          from: { opacity: '1', transform: 'scale(1) translateY(0)' },
+          to: { opacity: '0', transform: 'scale(0.96) translateY(4px)' },
+        },
+        backdropIn: {
+          from: { opacity: '0' },
+          to: { opacity: '1' },
+        },
+        backdropOut: {
+          from: { opacity: '1' },
+          to: { opacity: '0' },
+        },
+        kpiFlash: {
+          '0%': { boxShadow: '0 0 0 0 rgba(243,146,0,0)' },
+          '30%': { boxShadow: '0 0 0 3px rgba(243,146,0,0.35)' },
+          '100%': { boxShadow: '0 0 0 0 rgba(243,146,0,0)' },
         },
       },
     },
