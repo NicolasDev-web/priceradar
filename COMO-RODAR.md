@@ -1,7 +1,7 @@
 # Como rodar o PriceRadar
 
 Todos os comandos são para **PowerShell no Windows**, a partir da raiz do repositório
-(`C:\Users\Nicolas\Documents\PrecificacaoBruninho`).
+(`C:\Users\Nicolas\Documents\GitHub\priceradar`).
 
 ---
 
@@ -131,6 +131,46 @@ Get-NetTCPConnection -LocalPort 8002 -State Listen | ForEach-Object { Stop-Proce
 
 ---
 
+## Autostart no boot (Windows)
+
+Existe uma Tarefa Agendada do Windows chamada **`PriceRadar Backend`** que sobe o
+backend sozinho a cada logon (sem janela visível), na porta 8002. Ela roda:
+
+```text
+priceradar\backend\scripts\iniciar-servico-oculto.vbs
+  -> iniciar-servico.bat
+  -> venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8002
+```
+
+Os logs ficam em `priceradar\backend\uvicorn.log` (saída normal) e
+`uvicorn_err.log` (erros).
+
+Para (re)instalar a tarefa — por exemplo depois de mover/reclonar o repositório,
+já que a Action aponta para o caminho absoluto do clone atual:
+
+```powershell
+cd priceradar\backend\scripts
+powershell -ExecutionPolicy Bypass -File instalar-tarefa-agendada.ps1
+```
+
+Checar se está registrada e para onde aponta:
+
+```powershell
+schtasks /query /tn "PriceRadar Backend" /xml
+```
+
+Rodar na hora, sem esperar o próximo logon:
+
+```powershell
+schtasks /run /tn "PriceRadar Backend"
+```
+
+> O gatilho é "ao logar", não "ao ligar o PC" puro — então só sobe depois que
+> alguém loga na conta do Windows. Como o login aqui é manual, isso já cobre
+> "abrir o PC e a aplicação já estar no ar".
+
+---
+
 ## Deploy
 
 Ainda não há nada publicado. O que existe é a preparação — e uma medição que
@@ -180,8 +220,8 @@ próprio. Atualizar depois: `git pull && docker compose up -d --build`.
 **Se algum portal cair para 403** → a coleta fica na rede interna. O acesso
 remoto se resolve com Tailscale (plano grátis cobre 6 usuários): instale nesta
 máquina e nos notebooks, e a URL passa a funcionar de qualquer lugar sem expor
-nada na internet pública. Nesse caso vale transformar o `.bat` em serviço do
-Windows, para sobreviver a reboot.
+nada na internet pública. A sobrevivência a reboot já está coberta pela Tarefa
+Agendada descrita em [Autostart no boot](#autostart-no-boot-windows).
 
 ---
 
