@@ -58,9 +58,10 @@ def cabecalho(ws) -> list:
 # Posição das colunas
 # --------------------------------------------------------------------------
 
-def test_cabecalho_termina_com_latitude_longitude_e_precisao():
+def test_localizacao_vem_depois_das_colunas_originais():
+    # Colunas novas entram sempre no fim; "Foto (capa)" veio depois de Precisão.
     ws = planilha([empreendimento()])
-    assert cabecalho(ws)[-3:] == ["Latitude", "Longitude", "Precisão"]
+    assert cabecalho(ws)[14:17] == ["Latitude", "Longitude", "Precisão"]
 
 
 def test_preco_area_e_preco_m2_seguem_nas_colunas_6_7_e_8():

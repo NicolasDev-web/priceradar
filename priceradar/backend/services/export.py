@@ -38,6 +38,9 @@ COLUNAS = [
     ("Latitude", 12),
     ("Longitude", 12),
     ("Precisão", 18),
+    # Só a capa: a planilha é para análise, e várias URLs numa célula não
+    # servem para nada. Vazio = o anúncio não trouxe foto.
+    ("Foto (capa)", 40),
 ]
 
 # Como ler a coordenada da linha — sem isso, um centroide de bairro seria lido
@@ -94,6 +97,7 @@ def gerar_excel(empreendimentos: list[Empreendimento], preco_m2_medio: float) ->
             emp.latitude if emp.latitude is not None else "",
             emp.longitude if emp.longitude is not None else "",
             _ROTULO_ORIGEM.get(emp.origem_coordenada or "", ""),
+            emp.fotos[0] if emp.fotos else "",
         ]
 
         for col_idx, valor in enumerate(valores, start=1):

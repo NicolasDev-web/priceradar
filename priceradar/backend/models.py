@@ -70,6 +70,11 @@ class DiagnosticoColeta(BaseModel):
     # sai não é documentado: se cair a zero de um dia para o outro, foi o portal
     # que mudou — e isso precisa aparecer, não virar um mapa vazio sem motivo.
     com_coordenada: int = 0
+    # Mesma lógica para fotos. O normal é todo anúncio vir com foto: um portal
+    # que aparece aqui com muitos anúncios teve o HTML alterado e a extração
+    # quebrou — não é que o mercado parou de fotografar.
+    com_foto: int = 0
+    sem_foto_por_portal: dict[str, int] = {}
     fontes_ok: list[str] = []
     fontes_zero: list[str] = []
     fontes_erro: list[str] = []

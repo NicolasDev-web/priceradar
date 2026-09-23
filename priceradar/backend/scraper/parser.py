@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urljoin
 
 from services.texto import normalizar as normalizar_cidade
 
@@ -407,3 +408,107 @@ def extrair_nome_empreendimento(descricao: str | None) -> str | None:
     # Melhor vazio que errado: o comercial consegue trabalhar com uma célula
     # em branco, não com um nome inventado.
     return None
+
+
+# ── Fotos ────────────────────────────────────────────────────────────────────
+#
+# Só as fotos que já vêm na página de resultados: buscar a página de detalhe de
+# cada anúncio multiplicaria as requisições, que é o que os portais pontuam
+# como robô. Decisão registrada no PLANO_MELHORIAS.md (F1).
+
+# Mais que isso não cabe no carrossel de um card e só engorda o cache no banco.
+MAX_FOTOS = 10
+
+# O CDN do Grupo ZAP publica a URL como molde:
+#   https://resizedimgs.vivareal.com/{action}/{width}x{height}/named.images.sp/<hash>/foto.jpg
+# Sem preencher, o navegador pede a URL literal com chaves e recebe 404.
+_MOLDE_CDN = {
+    "{action}": "fit-in",
+    "{width}": "870",
+    "{height}": "653",
+    "{description}": "foto",
+}
+
+# Imagens de card que não são foto do imóvel: logo do anunciante, ícone,
+# selo, pixel de rastreio.
+_NAO_E_FOTO = re.compile(r"logo|icon|sprite|placeholder|badge|avatar|pixel|\.svg(?:\?|$)", re.I)
+
+
+def _normalizar_url_foto(bruta: str, base_url: str | None) -> str | None:
+    url = (bruta or "").strip()
+    if not url or url.startswith("data:"):
+        return None
+    for molde, valor in _MOLDE_CDN.items():
+        url = url.replace(molde, valor)
+    if url.startswith("//"):
+        url = "https:" + url
+    elif not url.startswith(("http://", "https://")):
+        if not base_url:
+            return None
+        url = urljoin(base_url, url)
+    if "{" in url or _NAO_E_FOTO.search(url):
+        return None
+    return url
+
+
+def extrair_fotos(valor, base_url: str | None = None) -> list[str]:
+    """
+    URLs de foto a partir do que o portal publicar.
+
+    Aceita os formatos que aparecem na prática: string, lista de strings,
+    `ImageObject` do schema.org (`url`/`contentUrl`) ou lista deles.
+    Devolve URLs absolutas, sem repetição, capa primeiro, no máximo MAX_FOTOS.
+    Nunca levanta exceção: sem foto o anúncio continua valendo, e o card mostra
+    a imagem genérica sinalizada.
+    """
+    candidatas: list[str] = []
+
+    def coletar(v) -> None:
+        if isinstance(v, str):
+            candidatas.append(v)
+        elif isinstance(v, dict):
+            for chave in ("url", "contentUrl", "src", "href", "original", "thumbnailUrl"):
+                if isinstance(v.get(chave), str):
+                    candidatas.append(v[chave])
+                    return
+        elif isinstance(v, (list, tuple)):
+            for x in v:
+                coletar(x)
+
+    try:
+        coletar(valor)
+    except Exception:  # formato inesperado: sem foto, não sem anúncio
+        return []
+
+    fotos: list[str] = []
+    for bruta in candidatas:
+        url = _normalizar_url_foto(bruta, base_url)
+        if url and url not in fotos:
+            fotos.append(url)
+        if len(fotos) >= MAX_FOTOS:
+            break
+    return fotos
+
+
+def fotos_de_card(card, base_url: str | None = None) -> list[str]:
+    """
+    Fotos de um card HTML (portais sem dado estruturado).
+
+    Lazy-load é a regra nesses sites: a URL real costuma estar em `data-src`
+    ou `srcset`, e o `src` é um placeholder — por isso a ordem de preferência.
+    """
+    urls: list[str] = []
+    try:
+        for img in card.select("img, source"):
+            for attr in ("data-src", "data-lazy", "data-original", "src"):
+                if img.get(attr):
+                    urls.append(img[attr])
+                    break
+            else:
+                srcset = img.get("srcset") or img.get("data-srcset")
+                if srcset:
+                    # "url1 320w, url2 640w" → a maior, que é a última
+                    urls.append(srcset.split(",")[-1].strip().split(" ")[0])
+    except Exception:
+        return []
+    return extrair_fotos(urls, base_url)

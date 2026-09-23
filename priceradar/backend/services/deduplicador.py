@@ -26,6 +26,7 @@ import os
 from collections import defaultdict
 from difflib import SequenceMatcher
 
+from scraper.parser import MAX_FOTOS
 from services.texto import normalizar
 
 logger = logging.getLogger(__name__)
@@ -193,6 +194,19 @@ def deduplicar_cross_portal(listings: list[dict]) -> list[dict]:
         ]
         if outros_portais:
             rep["portais_duplicados"] = outros_portais
+
+        # Fotos: une as de todos os portais do cluster, representante primeiro.
+        # O mesmo imóvel costuma ter fotos diferentes em cada portal — ficar só
+        # com as do representante jogaria fora justamente as que completam a
+        # galeria (ou deixaria o card na imagem genérica quando o representante,
+        # escolhido pela completude, é o único sem foto).
+        fotos: list[str] = []
+        for i in [rep_idx] + [i for i in indices if i != rep_idx]:
+            for url in listings[i].get("fotos") or []:
+                if url not in fotos:
+                    fotos.append(url)
+        if fotos:
+            rep["fotos"] = fotos[:MAX_FOTOS]
 
         resultado.append(rep)
 
