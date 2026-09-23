@@ -17,6 +17,8 @@ from __future__ import annotations
 import logging
 import re
 
+from models import BANHEIROS_OU_MAIS
+
 logger = logging.getLogger(__name__)
 
 # ── Limites de sanidade absoluta ─────────────────────────────────────────────
@@ -103,6 +105,18 @@ def validar_anuncio(item: dict, request=None) -> tuple[bool, str | None]:
         if quartos_pedido and quartos_item is not None and int(quartos_item) != int(quartos_pedido):
             return False, 'tipologia_divergente'
 
+        # Banheiros: mesma regra — só descarta quando o anúncio declara e diverge.
+        # O pedido máximo (4) vale como "4 ou mais".
+        banheiros_pedido = getattr(request, 'banheiros', None)
+        banheiros_item = _int_ou_none(item.get('banheiros'))
+        if banheiros_pedido and banheiros_item is not None:
+            if banheiros_pedido >= BANHEIROS_OU_MAIS:
+                diverge = banheiros_item < banheiros_pedido
+            else:
+                diverge = banheiros_item != banheiros_pedido
+            if diverge:
+                return False, 'banheiros_divergente'
+
         preco_min = getattr(request, 'preco_min', None)
         preco_max = getattr(request, 'preco_max', None)
         if preco_min and preco < preco_min * (1 - TOLERANCIA_FAIXA_PRECO):
@@ -140,6 +154,12 @@ def filtrar_anuncios(itens: list[dict], request=None) -> tuple[list[dict], dict[
         logger.info(f"Validação: {len(itens)} → {len(validos)} válidos ({resumo})")
 
     return validos, descartes
+
+
+def _int_ou_none(valor) -> int | None:
+    """Banheiros chega como int, float ou string conforme o portal."""
+    f = _float_ou_none(valor)
+    return int(f) if f is not None else None
 
 
 def _float_ou_none(valor) -> float | None:

@@ -16,6 +16,10 @@ class BuscaSalva(Base):
     preco_max        = Column(Float, nullable=False)
     quartos          = Column(Integer, nullable=True)
     bairro           = Column(String, nullable=True)
+    # Filtros que mudam o resultado precisam estar aqui: sem eles o cache
+    # devolveria uma busca "só torre" para quem pediu sem filtro, e vice-versa.
+    banheiros        = Column(Integer, nullable=True)
+    tipo_edificacao  = Column(String, nullable=True)
     total_encontrado = Column(Integer, default=0)
     preco_m2_medio   = Column(Float, nullable=True)
     preco_m2_mediana = Column(Float, nullable=True)
@@ -52,6 +56,8 @@ class EmpreendimentoDB(Base):
     url_anuncio         = Column(String, nullable=False)
     data_coleta         = Column(DateTime, default=datetime.utcnow)
     rf_score            = Column(Float, nullable=True)
+    # Lista de URLs serializada em JSON — SQLite não tem tipo array.
+    fotos               = Column(Text, nullable=True)
 
     busca = relationship("BuscaSalva", back_populates="empreendimentos")
 

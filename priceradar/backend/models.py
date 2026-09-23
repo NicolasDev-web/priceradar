@@ -41,6 +41,10 @@ class Empreendimento(BaseModel):
     # e outros portais onde o mesmo imóvel foi encontrado.
     campos_imputados: list[str] = []
     portais_duplicados: list[str] = []
+    # URLs absolutas das fotos que vieram na página de resultados, capa
+    # primeiro. Lista vazia = o anúncio não trouxe foto (o card mostra uma
+    # imagem genérica sinalizada como tal, nunca descarta o anúncio).
+    fotos: list[str] = []
 
 
 class ResumoBairro(BaseModel):
@@ -72,6 +76,11 @@ class DiagnosticoColeta(BaseModel):
     descartados_por_motivo: dict[str, int] = {}
 
 
+# No filtro de banheiros, este valor e qualquer um acima significam "N ou mais".
+# Acima de 4 banheiros o volume de anúncios é tão pequeno que separar 4, 5 e 6
+# só produziria buscas vazias.
+BANHEIROS_OU_MAIS = 4
+
 _UFS = {
     "ac", "al", "ap", "am", "ba", "ce", "df", "es", "go", "ma", "mt", "ms",
     "mg", "pa", "pb", "pr", "pe", "pi", "rj", "rn", "rs", "ro", "rr", "sc",
@@ -91,6 +100,19 @@ class BuscaRequest(BaseModel):
     # torre | provavel_bloco | indefinido. Nenhum portal filtra elevador na
     # origem, então é aplicado depois da coleta.
     tipo_edificacao: str | None = None
+    # 1, 2 e 3 são exatos; 4 significa "4 ou mais" (BANHEIROS_OU_MAIS). Como
+    # quartos, anúncio que não informa banheiros não é descartado.
+    banheiros: int | None = None
+
+    @field_validator("banheiros")
+    @classmethod
+    def banheiros_positivo(cls, v: int | None) -> int | None:
+        # 0 chega do select "Qualquer" em clientes antigos: é o mesmo que não filtrar.
+        if v is None or v == 0:
+            return None
+        if v < 0:
+            raise ValueError("banheiros não pode ser negativo")
+        return min(v, BANHEIROS_OU_MAIS)
 
     @property
     def lista_bairros(self) -> list[str]:

@@ -33,7 +33,7 @@ F4 (coleta)    — independente, contínuo; ao criar fonte nova já extrai fotos
 
 ---
 
-## F0 — Contrato compartilhado (pré-requisito de F1 e F2)
+## F0 — Contrato compartilhado (pré-requisito de F1 e F2) — ✅ feito
 
 Os dois campos novos atravessam as mesmas 5 camadas. Fazer de uma vez evita dois
 conflitos nos mesmos arquivos.
@@ -91,7 +91,7 @@ cards com foto real (a imagem genérica é exceção); VivaReal/Zap com várias;
 
 ---
 
-## F2 — Filtro de banheiros (agente `filtro-banheiros`)
+## F2 — Filtro de banheiros (agente `filtro-banheiros`) — ✅ feito, exceto F2.3
 
 **Situação hoje:** o campo `banheiros` já é coletado e exibido no card, mas não há filtro.
 
@@ -99,7 +99,7 @@ cards com foto real (a imagem genérica é exceção); VivaReal/Zap com várias;
 | --- | --- | --- |
 | F2.1 | Select "Banheiros" no formulário, ao lado de "Quartos": Qualquer / 1 / 2 / 3 / 4+. | `components/SearchForm.tsx` |
 | F2.2 | Filtro pós-coleta em `filtrar_anuncios`, seguindo o precedente de `quartos`: exato para 1–3, `>=` para 4; anúncio **sem** banheiros informado é mantido (mesma regra de quartos). Descarte conta como `banheiros_divergente` no diagnóstico. | `services/validacao.py` |
-| F2.3 | Filtro na origem onde o portal aceita (menos páginas desperdiçadas): verificar parâmetro de URL em VivaReal, Zap, ImovelWeb, ChavesNaMão. Onde não houver, o F2.2 cobre. | `scraper/*.py` |
+| F2.3 ⏳ | Filtro na origem onde o portal aceita (menos páginas desperdiçadas): verificar parâmetro de URL em VivaReal, Zap, ImovelWeb, ChavesNaMão. Onde não houver, o F2.2 cobre. | `scraper/*.py` |
 | F2.4 | Chave do cache e histórico incluem `banheiros` (depende de F0). | `repositories/busca_repo.py` |
 | F2.5 | Testes: exato, 4+, `None` mantido, diagnóstico conta o descarte, cache não mistura buscas com banheiros diferentes. | `tests/test_banheiros.py` |
 

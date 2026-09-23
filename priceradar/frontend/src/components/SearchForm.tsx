@@ -39,6 +39,7 @@ export function SearchForm({ onBuscar, loading }: Props) {
   const [precoMin, setPrecoMin] = useState('280.000')
   const [precoMax, setPrecoMax] = useState('500.000')
   const [quartos, setQuartos] = useState<string>('')
+  const [banheiros, setBanheiros] = useState<string>('')
   const [tipoEdificacao, setTipoEdificacao] = useState<string>('')
   const [mostrarSugestoes, setMostrarSugestoes] = useState(false)
   const [bairrosDaCidade, setBairrosDaCidade] = useState<string[]>([])
@@ -130,6 +131,7 @@ export function SearchForm({ onBuscar, loading }: Props) {
       preco_min: parseMoeda(precoMin),
       preco_max: parseMoeda(precoMax),
       quartos: quartos ? parseInt(quartos) : null,
+      banheiros: banheiros ? parseInt(banheiros) : null,
       bairros: todos.length ? todos : null,
       tipo_edificacao: tipoEdificacao || null,
     })
@@ -180,7 +182,7 @@ export function SearchForm({ onBuscar, loading }: Props) {
         </div>
 
         {/* Bairros (vários) */}
-        <div className="lg:col-span-3 relative">
+        <div className="lg:col-span-2 relative">
           <label className={labelBase}>
             Bairros{' '}
             <span className="normal-case text-mrv-text-dim font-normal">(opc.)</span>
@@ -276,6 +278,21 @@ export function SearchForm({ onBuscar, loading }: Props) {
         <div className="lg:col-span-1">
           <label className={labelBase}>Quartos</label>
           <select value={quartos} onChange={e => setQuartos(e.target.value)} className={inputBase}>
+            <option value="">Todos</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4+</option>
+          </select>
+        </div>
+
+        {/* Banheiros — mesma semântica de quartos: 4 = 4 ou mais, e anúncio
+            que não informa banheiros continua na busca. */}
+        <div className="lg:col-span-1">
+          <label className={labelBase} title="Anúncios que não informam banheiros continuam aparecendo">
+            Banheiros
+          </label>
+          <select value={banheiros} onChange={e => setBanheiros(e.target.value)} className={inputBase}>
             <option value="">Todos</option>
             <option value="1">1</option>
             <option value="2">2</option>
