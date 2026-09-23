@@ -38,6 +38,10 @@ async def _migrar_colunas(conn):
         await conn.execute(text("ALTER TABLE buscas ADD COLUMN bairro VARCHAR"))
     if "preco_m2_mediana" not in colunas:
         await conn.execute(text("ALTER TABLE buscas ADD COLUMN preco_m2_mediana FLOAT"))
+    if "banheiros" not in colunas:
+        await conn.execute(text("ALTER TABLE buscas ADD COLUMN banheiros INTEGER"))
+    if "tipo_edificacao" not in colunas:
+        await conn.execute(text("ALTER TABLE buscas ADD COLUMN tipo_edificacao VARCHAR"))
 
     result = await conn.execute(text("PRAGMA table_info(empreendimentos)"))
     colunas_emp = {row[1] for row in result.fetchall()}
@@ -53,3 +57,5 @@ async def _migrar_colunas(conn):
         await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN longitude FLOAT"))
     if "origem_coordenada" not in colunas_emp:
         await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN origem_coordenada VARCHAR"))
+    if "fotos" not in colunas_emp:
+        await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN fotos TEXT"))

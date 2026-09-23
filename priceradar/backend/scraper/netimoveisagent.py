@@ -17,6 +17,7 @@ from scraper.browser import buscar_html_playwright, interceptar_api_playwright
 from scraper.parser import (
     calcular_preco_m2,
     extrair_construtora,
+    extrair_fotos,
     extrair_nome_empreendimento,
     normalizar_cidade,
 )
@@ -91,6 +92,7 @@ def _parse_json_ld(html: str, cidade_normalizada: str, preco_min: float, preco_m
                     "descricao": descricao_full[:300],
                     "url_anuncio": url_anuncio or NETIMOVEISS_BASE,
                     "data_coleta": datetime.now(),
+                    "fotos": extrair_fotos(item.get("image") or item.get("photo"), NETIMOVEISS_BASE),
                 })
             except Exception as e:
                 logger.warning(f"Netimoveis: erro ao processar item: {e}")
@@ -98,6 +100,15 @@ def _parse_json_ld(html: str, cidade_normalizada: str, preco_min: float, preco_m
         break
 
     return resultados
+
+
+def _fotos_item_api(item: dict) -> list[str]:
+    """A API/estado inicial do NetImóveis não tem nome de campo documentado para
+    foto: tenta os usuais. Não confirmado contra captura real."""
+    for chave in ("fotos", "imagens", "images", "photos", "image", "foto", "imagem"):
+        if item.get(chave):
+            return extrair_fotos(item[chave], NETIMOVEISS_BASE)
+    return []
 
 
 def _extrair_de_json_api(data: Any, cidade_normalizada: str, preco_min: float, preco_max: float) -> list[dict]:
@@ -145,6 +156,7 @@ def _extrair_de_json_api(data: Any, cidade_normalizada: str, preco_min: float, p
                 "descricao": str(item.get("descricao") or item.get("description") or "")[:300],
                 "url_anuncio": url or NETIMOVEISS_BASE,
                 "data_coleta": datetime.now(),
+                "fotos": _fotos_item_api(item),
             })
         except Exception as e:
             logger.warning(f"Netimoveis API item erro: {e}")
@@ -207,6 +219,7 @@ def _parse_initial_state(html: str, cidade_normalizada: str, preco_min: float, p
                     "descricao": str(item.get("descricao") or "")[:300],
                     "url_anuncio": url or NETIMOVEISS_BASE,
                     "data_coleta": datetime.now(),
+                    "fotos": _fotos_item_api(item),
                 })
             except Exception:
                 continue

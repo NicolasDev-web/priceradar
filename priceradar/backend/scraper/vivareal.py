@@ -16,6 +16,7 @@ from scraper.parser import (
     extrair_amenidades,
     extrair_bairro_do_slug,
     extrair_construtora,
+    extrair_fotos,
     extrair_nome_empreendimento,
     normalizar_cidade,
 )
@@ -167,6 +168,7 @@ def _parse_json_ld(
                     'descricao': descricao,
                     'url_anuncio': url_anuncio or VIVAREAL_BASE_URL,
                     'data_coleta': datetime.now(),
+                    'fotos': extrair_fotos(item.get('image') or item.get('photo'), VIVAREAL_BASE_URL),
                 }
                 aplicar_localizacao(registro, localizacoes)
                 resultados.append(registro)

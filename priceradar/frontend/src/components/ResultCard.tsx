@@ -1,6 +1,7 @@
 import { Bath, BedDouble, Car, ExternalLink, MapPin } from 'lucide-react'
 import type { Empreendimento } from '../types'
 import { desvioPercentual, faixaPorDesvio, rotuloDesvio } from '../utils/posicionamento'
+import { FotoCarrossel } from './FotoCarrossel'
 import { VariacaoMRVBadge } from './VariacaoMRVBadge'
 
 interface Props {
@@ -110,123 +111,128 @@ export function ResultCard({ empreendimento: e, precoM2Medio, indice = 0 }: Prop
       {/* Barra lateral de posicionamento — encode a informação de preço relativo */}
       <div className={`w-1 flex-shrink-0 ${pos.barColor} opacity-80 group-hover:opacity-100 transition-opacity`} />
 
-      <div className="flex-1 p-4 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0">
 
-        {/* Header: nome + preço total */}
-        <div className="flex justify-between items-start gap-2 mb-2.5">
-          <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-mrv-text text-sm leading-snug line-clamp-1 tracking-tight">
-              {nomePrincipal}
-            </h3>
-            {nomeSecundario && (
-              <p className="text-[11px] text-mrv-text-muted line-clamp-1 mt-0.5 leading-snug">
-                {nomeSecundario}
-              </p>
-            )}
-          </div>
-          <span className="font-data font-bold text-mrv-text text-sm whitespace-nowrap ml-1 flex-shrink-0">
-            {formatarMoeda(e.preco)}
-          </span>
-        </div>
+        <FotoCarrossel fotos={e.fotos} titulo={nomePrincipal} />
 
-        {/* Meta: portal + construtora + bairro */}
-        <div className="flex items-center flex-wrap gap-1.5 mb-3">
-          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${portalCfg.color}`}>
-            {portalCfg.label}
-          </span>
-          {e.construtora && (
-            <span className="text-[10px] font-medium text-mrv-text-muted bg-mrv-surface-2/60 px-2 py-0.5 rounded-full">
-              {e.construtora}
-            </span>
-          )}
-          {e.tipo_edificacao && EDIFICACAO_MAP[e.tipo_edificacao] && (
-            <span
-              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${EDIFICACAO_MAP[e.tipo_edificacao].color}`}
-              title={EDIFICACAO_MAP[e.tipo_edificacao].titulo}
-            >
-              {EDIFICACAO_MAP[e.tipo_edificacao].label}
-            </span>
-          )}
-          {e.bairro && (
-            <span className="text-[10px] font-medium text-mrv-text-muted flex items-center gap-0.5">
-              <MapPin size={9} />
-              {e.bairro}
-            </span>
-          )}
-          <span className="text-[10px] text-mrv-text-dim ml-auto flex-shrink-0">{e.area_m2} m²</span>
-        </div>
+        <div className="flex-1 p-4 flex flex-col min-w-0">
 
-        {/* Logradouro em linha própria: é dado de rua, não de bairro, e
-            misturar os dois foi o que quebrou o filtro por bairro. */}
-        {e.endereco && (
-          <p className="text-[10px] text-mrv-text-dim -mt-2 mb-3 truncate" title={e.endereco}>
-            {e.endereco}
-          </p>
-        )}
-
-        {/* Detalhes: quartos, banheiros, vagas */}
-        <div className="flex items-center gap-3.5 text-[11px] text-mrv-text-muted py-2.5 border-t border-b border-mrv-border/50 mb-3">
-          {e.quartos != null && (
-            <span className="flex items-center gap-1">
-              <BedDouble size={11} className="text-mrv-text-dim" />
-              {e.quartos} qto{e.quartos !== 1 ? 's' : ''}
-            </span>
-          )}
-          {e.banheiros != null && (
-            <span className="flex items-center gap-1">
-              <Bath size={11} className="text-mrv-text-dim" />
-              {e.banheiros} bnh
-            </span>
-          )}
-          {e.vagas != null && (
-            <span className="flex items-center gap-1">
-              <Car size={11} className="text-mrv-text-dim" />
-              {e.vagas} vaga{e.vagas !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-
-        {/* Rodapé: preço/m² + rf_score + link */}
-        <div className="mt-auto">
-          {/* Linha 1: preço/m² e variação */}
-          <div className="flex items-end justify-between gap-2 mb-2">
-            <div>
-              <p className="text-[10px] text-mrv-text-dim mb-1 tracking-wide">Preço/m²</p>
-              <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="font-data font-bold text-mrv-text text-[1.2rem] leading-none" style={{ letterSpacing: '-0.02em' }}>
-                  {formatarMoeda(e.preco_m2)}
-                </span>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${pos.pctBg} ${pos.pctColor}`}>
-                  {pos.label}
-                </span>
-              </div>
-              {/* Badge variação MRV */}
-              {e.variacao_mrv_pct != null && (
-                <div className="mt-1.5">
-                  <VariacaoMRVBadge variacao={e.variacao_mrv_pct} />
-                </div>
+          {/* Header: nome + preço total */}
+          <div className="flex justify-between items-start gap-2 mb-2.5">
+            <div className="flex-1 min-w-0">
+              <h3 className="font-bold text-mrv-text text-sm leading-snug line-clamp-1 tracking-tight">
+                {nomePrincipal}
+              </h3>
+              {nomeSecundario && (
+                <p className="text-[11px] text-mrv-text-muted line-clamp-1 mt-0.5 leading-snug">
+                  {nomeSecundario}
+                </p>
               )}
             </div>
-
-            <a
-              href={e.url_anuncio}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-[11px] font-semibold text-mrv-text-muted border border-mrv-border px-2.5 py-1.5 rounded-card hover:border-mrv-green hover:text-mrv-text transition-colors whitespace-nowrap flex-shrink-0"
-            >
-              Ver <ExternalLink size={10} />
-            </a>
+            <span className="font-data font-bold text-mrv-text text-sm whitespace-nowrap ml-1 flex-shrink-0">
+              {formatarMoeda(e.preco)}
+            </span>
           </div>
 
-          {/* Linha 2: rf_score (se disponível) */}
-          {e.rf_score != null && (
-            <div className="flex items-center gap-2 pt-2 border-t border-mrv-border/40">
-              <span className="text-[10px] text-mrv-text-dim tracking-wide">Confiabilidade RF</span>
-              <RfScoreIndicator score={e.rf_score} />
-            </div>
-          )}
-        </div>
+          {/* Meta: portal + construtora + bairro */}
+          <div className="flex items-center flex-wrap gap-1.5 mb-3">
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${portalCfg.color}`}>
+              {portalCfg.label}
+            </span>
+            {e.construtora && (
+              <span className="text-[10px] font-medium text-mrv-text-muted bg-mrv-surface-2/60 px-2 py-0.5 rounded-full">
+                {e.construtora}
+              </span>
+            )}
+            {e.tipo_edificacao && EDIFICACAO_MAP[e.tipo_edificacao] && (
+              <span
+                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${EDIFICACAO_MAP[e.tipo_edificacao].color}`}
+                title={EDIFICACAO_MAP[e.tipo_edificacao].titulo}
+              >
+                {EDIFICACAO_MAP[e.tipo_edificacao].label}
+              </span>
+            )}
+            {e.bairro && (
+              <span className="text-[10px] font-medium text-mrv-text-muted flex items-center gap-0.5">
+                <MapPin size={9} />
+                {e.bairro}
+              </span>
+            )}
+            <span className="text-[10px] text-mrv-text-dim ml-auto flex-shrink-0">{e.area_m2} m²</span>
+          </div>
 
+          {/* Logradouro em linha própria: é dado de rua, não de bairro, e
+              misturar os dois foi o que quebrou o filtro por bairro. */}
+          {e.endereco && (
+            <p className="text-[10px] text-mrv-text-dim -mt-2 mb-3 truncate" title={e.endereco}>
+              {e.endereco}
+            </p>
+          )}
+
+          {/* Detalhes: quartos, banheiros, vagas */}
+          <div className="flex items-center gap-3.5 text-[11px] text-mrv-text-muted py-2.5 border-t border-b border-mrv-border/50 mb-3">
+            {e.quartos != null && (
+              <span className="flex items-center gap-1">
+                <BedDouble size={11} className="text-mrv-text-dim" />
+                {e.quartos} qto{e.quartos !== 1 ? 's' : ''}
+              </span>
+            )}
+            {e.banheiros != null && (
+              <span className="flex items-center gap-1">
+                <Bath size={11} className="text-mrv-text-dim" />
+                {e.banheiros} bnh
+              </span>
+            )}
+            {e.vagas != null && (
+              <span className="flex items-center gap-1">
+                <Car size={11} className="text-mrv-text-dim" />
+                {e.vagas} vaga{e.vagas !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+
+          {/* Rodapé: preço/m² + rf_score + link */}
+          <div className="mt-auto">
+            {/* Linha 1: preço/m² e variação */}
+            <div className="flex items-end justify-between gap-2 mb-2">
+              <div>
+                <p className="text-[10px] text-mrv-text-dim mb-1 tracking-wide">Preço/m²</p>
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className="font-data font-bold text-mrv-text text-[1.2rem] leading-none" style={{ letterSpacing: '-0.02em' }}>
+                    {formatarMoeda(e.preco_m2)}
+                  </span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${pos.pctBg} ${pos.pctColor}`}>
+                    {pos.label}
+                  </span>
+                </div>
+                {/* Badge variação MRV */}
+                {e.variacao_mrv_pct != null && (
+                  <div className="mt-1.5">
+                    <VariacaoMRVBadge variacao={e.variacao_mrv_pct} />
+                  </div>
+                )}
+              </div>
+
+              <a
+                href={e.url_anuncio}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[11px] font-semibold text-mrv-text-muted border border-mrv-border px-2.5 py-1.5 rounded-card hover:border-mrv-green hover:text-mrv-text transition-colors whitespace-nowrap flex-shrink-0"
+              >
+                Ver <ExternalLink size={10} />
+              </a>
+            </div>
+
+            {/* Linha 2: rf_score (se disponível) */}
+            {e.rf_score != null && (
+              <div className="flex items-center gap-2 pt-2 border-t border-mrv-border/40">
+                <span className="text-[10px] text-mrv-text-dim tracking-wide">Confiabilidade RF</span>
+                <RfScoreIndicator score={e.rf_score} />
+              </div>
+            )}
+          </div>
+
+        </div>
       </div>
     </div>
   )

@@ -21,6 +21,7 @@ from scraper.http import buscar_html
 from scraper.parser import (
     calcular_preco_m2,
     extrair_construtora,
+    fotos_de_card,
     limpar_preco,
     normalizar_cidade,
 )
@@ -143,6 +144,7 @@ def parse_olx_html(html: str, cidade_normalizada: str) -> list[dict]:
                 'descricao': descricao,
                 'url_anuncio': href or OLX_BASE_URL,
                 'data_coleta': datetime.now(),
+                'fotos': fotos_de_card(card, OLX_BASE_URL),
             })
         except Exception as e:
             logger.warning(f"OLX: erro ao parsear card: {e}")

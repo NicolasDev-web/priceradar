@@ -15,7 +15,7 @@ from datetime import datetime
 
 import httpx
 
-from scraper.parser import calcular_preco_m2, normalizar_cidade
+from scraper.parser import calcular_preco_m2, extrair_fotos, normalizar_cidade
 from services.texto import sem_acento
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,21 @@ def _extrair_next_data(html: str) -> dict | None:
     return None
 
 
+# O estado inicial traz só o nome do arquivo ("original123.jpg"); a URL é
+# montada sobre o CDN de imagens do site. NÃO confirmado contra uma captura
+# real (a rede do ambiente em que isto foi escrito bloqueia o portal): se os
+# cards do QuintoAndar vierem com a imagem genérica, é aqui que se corrige.
+QA_IMG = "https://www.quintoandar.com.br/img/med/"
+
+
+def _fotos_house(house: dict) -> list[str]:
+    brutas = [house.get("coverImage")]
+    for chave in ("imageList", "photos", "images"):
+        if isinstance(house.get(chave), list):
+            brutas.extend(house[chave])
+    return extrair_fotos([b for b in brutas if b], QA_IMG)
+
+
 def _parse_house(house: dict, cidade_normalizada: str, preco_min: float, preco_max: float) -> dict | None:
     """Converte um dict de house do QuintoAndar para o formato Empreendimento."""
     try:
@@ -107,6 +122,7 @@ def _parse_house(house: dict, cidade_normalizada: str, preco_min: float, preco_m
             "descricao": f"{endereco} — {bairro}" if endereco else bairro or "",
             "url_anuncio": f"{QA_IMOVEL}/{house_id}",
             "data_coleta": datetime.now(),
+            "fotos": _fotos_house(house),
         }
     except Exception as e:
         logger.warning(f"QuintoAndar: erro ao parsear house: {e}")

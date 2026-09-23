@@ -32,11 +32,16 @@ export interface Empreendimento {
   rf_score?: number
   campos_imputados?: string[]
   portais_duplicados?: string[]
+  /** URLs das fotos da página de resultados, capa primeiro. Vazia = sem foto. */
+  fotos?: string[]
 }
 
 export interface DiagnosticoColeta {
   total_bruto: number
   com_coordenada: number
+  /** Anúncios com ao menos uma foto. Portal com muitos sem foto = extração quebrou. */
+  com_foto?: number
+  sem_foto_por_portal?: Record<string, number>
   fontes_ok: string[]
   fontes_zero: string[]
   fontes_erro: string[]
@@ -48,6 +53,8 @@ export interface BuscaRequest {
   preco_min: number
   preco_max: number
   quartos: number | null
+  /** 1–3 exatos; 4 = 4 ou mais. */
+  banheiros?: number | null
   bairro?: string | null
   bairros?: string[] | null
   tipo_edificacao?: string | null

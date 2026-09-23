@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -24,6 +25,22 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+
+class _OcultarTokenNoLog(logging.Filter):
+    """O proxy de tiles recebe o token na query (`?t=`), e o access log do
+    uvicorn grava a URL inteira — sem isto, `uvicorn.log` acumularia tokens de
+    sessão válidos por 30 dias."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple) and len(record.args) >= 3 and isinstance(record.args[2], str):
+            args = list(record.args)
+            args[2] = re.sub(r"([?&]t=)[^&\s]+", r"\1***", args[2])
+            record.args = tuple(args)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_OcultarTokenNoLog())
+
 # Validade do cache de buscas: dentro desse tempo, uma busca idêntica reaproveita
 # os resultados do banco em vez de refazer o scraping.
 CACHE_MINUTOS = int(os.getenv("CACHE_MINUTOS", "60"))
@@ -43,10 +60,11 @@ from repositories.empreendimento_repo import (
     upsert_referencial_mrv,
 )
 from services import jobs
-from services.auth import conferir_senha, exigir_login, gerar_token
+from services.auth import conferir_senha, exigir_login, gerar_token, token_valido
 from services.bairros import listar_bairros
 from services.export import gerar_excel
 from services.search import executar_busca
+from services.tiles import TileIndisponivel, coordenada_valida, obter_tile
 
 
 @asynccontextmanager
@@ -89,6 +107,37 @@ async def login(payload: LoginRequest):
     if not conferir_senha(payload.senha):
         raise HTTPException(status_code=401, detail="Senha incorreta")
     return LoginResponse(token=gerar_token())
+
+
+@app.get("/api/tiles/{z}/{x}/{y}.png")
+async def tile_mapa(
+    z: int,
+    x: int,
+    y: int,
+    r: str = Query(default="", description='"@2x" para telas de alta densidade'),
+    t: str = Query(default="", description="Token de sessão"),
+):
+    """
+    Tile do mapa via proxy (ver services/tiles.py).
+
+    Fora do `router_protegido` porque o Leaflet pede tiles como <img>, que não
+    manda cabeçalho Authorization — o token vem na query. Ainda assim exige
+    login: o app fica exposto pelo Tailscale Funnel, e um proxy aberto deixaria
+    qualquer um gastar a cota da chave.
+    """
+    if not token_valido(t):
+        raise HTTPException(status_code=401, detail="Não autenticado")
+    if not coordenada_valida(z, x, y):
+        raise HTTPException(status_code=400, detail="Tile fora da grade")
+    try:
+        png = await obter_tile(z, x, y, retina=(r == "@2x"))
+    except TileIndisponivel as e:
+        logger.info(f"Tile {z}/{x}/{y} indisponível: {e}")
+        # 503 faz o mapa trocar para o provedor sem chave.
+        raise HTTPException(status_code=503, detail="Tile indisponível")
+    # `private`: a URL carrega o token, não deve parar em cache compartilhado.
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "private, max-age=604800"})
 
 
 @router_protegido.post("/api/buscar", response_model=BuscaResponse)

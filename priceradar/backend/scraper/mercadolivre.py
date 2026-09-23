@@ -14,7 +14,13 @@ from typing import Any
 from bs4 import BeautifulSoup
 
 from scraper.browser import buscar_html_playwright, interceptar_api_playwright
-from scraper.parser import calcular_preco_m2, extrair_construtora, normalizar_cidade
+from scraper.parser import (
+    calcular_preco_m2,
+    extrair_construtora,
+    extrair_fotos,
+    fotos_de_card,
+    normalizar_cidade,
+)
 from services.texto import sem_acento
 
 logger = logging.getLogger(__name__)
@@ -101,6 +107,7 @@ def _parse_html(html: str, cidade_normalizada: str, preco_min: float, preco_max:
                     "descricao": item.get("description", "")[:300],
                     "url_anuncio": url_anuncio,
                     "data_coleta": datetime.now(),
+                    "fotos": extrair_fotos(item.get("image"), ML_SITE),
                 })
             except Exception as e:
                 logger.warning(f"MercadoLivre: erro no item JSON-LD: {e}")
@@ -149,6 +156,7 @@ def _parse_html(html: str, cidade_normalizada: str, preco_min: float, preco_max:
                 "descricao": nome[:300],
                 "url_anuncio": url_anuncio,
                 "data_coleta": datetime.now(),
+                "fotos": fotos_de_card(card, ML_SITE),
             })
         except Exception as e:
             logger.warning(f"MercadoLivre: erro no card HTML: {e}")

@@ -51,3 +51,5 @@ Thumbs.db
 .DS_Store
 .idea/
 .vscode/
+# Cache do proxy de tiles do mapa (services/tiles.py) — regenerável, pode crescer.
+priceradar/backend/data/tiles/

@@ -1,3 +1,5 @@
+import json
+import logging
 import statistics
 from datetime import datetime, timedelta
 
@@ -7,6 +9,21 @@ from sqlalchemy.orm import selectinload
 
 from database.models_db import BuscaSalva, EmpreendimentoDB
 from models import BuscaRequest, BuscaResponse, Empreendimento
+
+logger = logging.getLogger(__name__)
+
+
+def _ler_fotos(bruto: str | None) -> list[str]:
+    """Desserializa a coluna `fotos`. Linha antiga (NULL) ou JSON corrompido
+    vira lista vazia: o card cai na imagem genérica em vez de a busca quebrar."""
+    if not bruto:
+        return []
+    try:
+        fotos = json.loads(bruto)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("Coluna fotos com JSON inválido; tratando como sem foto")
+        return []
+    return [f for f in fotos if isinstance(f, str)] if isinstance(fotos, list) else []
 
 
 def _chave_bairros(request) -> str | None:
@@ -32,6 +49,8 @@ async def salvar_busca(db: AsyncSession, busca: BuscaRequest, resultado: BuscaRe
         preco_max=busca.preco_max,
         quartos=busca.quartos,
         bairro=_chave_bairros(busca),
+        banheiros=busca.banheiros,
+        tipo_edificacao=busca.tipo_edificacao,
         total_encontrado=resultado.total,
         preco_m2_medio=resultado.preco_m2_medio,
         preco_m2_mediana=resultado.preco_m2_mediana,
@@ -64,6 +83,7 @@ async def salvar_busca(db: AsyncSession, busca: BuscaRequest, resultado: BuscaRe
             url_anuncio=emp.url_anuncio,
             data_coleta=emp.data_coleta,
             rf_score=emp.rf_score,
+            fotos=json.dumps(emp.fotos) if emp.fotos else None,
         ))
 
     await db.commit()
@@ -77,7 +97,8 @@ async def buscar_cache_recente(
     preco_m2_mrv: float | None = None,
 ) -> BuscaResponse | None:
     """
-    Procura uma busca idêntica (mesmos cidade/preço/quartos/bairro) feita há menos
+    Procura uma busca idêntica (mesmos cidade/preço/quartos/banheiros/bairro/
+    tipo de edificação) feita há menos
     de `minutos_validade` minutos. Se achar, reconstrói o BuscaResponse a partir do
     banco — evitando refazer o scraping. Retorna None se não houver cache válido.
     """
@@ -97,9 +118,14 @@ async def buscar_cache_recente(
         .options(selectinload(BuscaSalva.empreendimentos))
         .limit(1)
     )
-    # quartos e bairro podem ser None — comparação explícita (== None vira IS NULL)
+    # Todos podem ser None — comparação explícita (== None vira IS NULL).
+    # Todo filtro que muda o resultado entra aqui: `tipo_edificacao` faltava, e
+    # uma busca "só torre" logo depois de outra sem filtro saía do cache sem
+    # filtro nenhum.
     q = q.where(BuscaSalva.quartos == request.quartos)
+    q = q.where(BuscaSalva.banheiros == request.banheiros)
     q = q.where(BuscaSalva.bairro == bairro)
+    q = q.where(BuscaSalva.tipo_edificacao == request.tipo_edificacao)
 
     result = await db.execute(q)
     busca = result.scalar_one_or_none()
@@ -138,6 +164,7 @@ async def buscar_cache_recente(
             url_anuncio=e.url_anuncio,
             data_coleta=e.data_coleta,
             rf_score=e.rf_score,
+            fotos=_ler_fotos(e.fotos),
         ))
 
     empreendimentos.sort(key=lambda x: x.preco_m2)

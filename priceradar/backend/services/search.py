@@ -345,6 +345,14 @@ async def _executar_busca_interna(
     # Quantos vieram com coordenada do portal, antes de qualquer estimativa —
     # é o número que denuncia uma mudança de formato nos portais.
     com_coordenada = sum(1 for i in raw_unicos if i.get('latitude') is not None)
+    com_foto = sum(1 for i in raw_unicos if i.get('fotos'))
+    sem_foto_por_portal: dict[str, int] = {}
+    for i in raw_unicos:
+        if not i.get('fotos'):
+            portal = i.get('portal', '?')
+            sem_foto_por_portal[portal] = sem_foto_por_portal.get(portal, 0) + 1
+    if sem_foto_por_portal:
+        logger.info(f"Fotos: {com_foto}/{len(raw_unicos)} com foto | sem foto por portal: {sem_foto_por_portal}")
 
     # Posiciona pelo centro do bairro quem o portal não localizou. Depois do
     # refino, para que o centroide não seja calculado sobre outlier removido.
@@ -378,6 +386,8 @@ async def _executar_busca_interna(
     diagnostico = DiagnosticoColeta(
         total_bruto=total_bruto,
         com_coordenada=com_coordenada,
+        com_foto=com_foto,
+        sem_foto_por_portal=sem_foto_por_portal,
         fontes_ok=sorted(p for p, n in contagem_por_portal.items() if n > 0),
         fontes_zero=sorted(p for p, n in contagem_por_portal.items() if n == 0 and p not in fontes_erro),
         fontes_erro=sorted(fontes_erro),
