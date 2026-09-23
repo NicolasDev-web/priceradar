@@ -24,7 +24,7 @@ from datetime import datetime
 import httpx
 from bs4 import BeautifulSoup
 
-from scraper.parser import calcular_preco_m2, extrair_construtora, normalizar_cidade
+from scraper.parser import calcular_preco_m2, extrair_construtora, extrair_fotos, normalizar_cidade
 from services.texto import sem_acento
 
 logger = logging.getLogger(__name__)
@@ -151,6 +151,10 @@ def _parse_oferta(oferta: dict, cidade_normalizada: str) -> dict | None:
         "descricao": titulo[:300],
         "url_anuncio": url,
         "data_coleta": datetime.now(),
+        # A foto pode estar no Offer ou no imóvel ofertado, conforme o anúncio.
+        "fotos": extrair_fotos(
+            item.get("image") or item.get("photo") or oferta.get("image"), CHAVESNAMAO_BASE
+        ),
     }
 
 

@@ -16,6 +16,7 @@ from scraper.http import buscar_html
 from scraper.parser import (
     calcular_preco_m2,
     extrair_construtora,
+    fotos_de_card,
     extrair_nome_empreendimento,
     normalizar_cidade,
 )
@@ -118,6 +119,7 @@ def _parse_card(card, cidade_normalizada: str, preco_min: float, preco_max: floa
             "descricao": descricao,
             "url_anuncio": url_anuncio,
             "data_coleta": datetime.now(),
+            "fotos": fotos_de_card(card, IMOVELWEB_BASE),
         }
     except Exception as e:
         logger.warning(f"ImovelWeb: erro ao parsear card: {e}")

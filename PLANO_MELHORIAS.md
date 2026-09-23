@@ -52,12 +52,13 @@ F0.2/F0.3 corrigem os dois juntos.
 
 ---
 
-## F1 — Fotos dos empreendimentos (agente `fotos-empreendimentos`) — 🟡 falta ligar nos scrapers (F1.1/F1.3)
+## F1 — Fotos dos empreendimentos (agente `fotos-empreendimentos`) — 🟡 ligado nos scrapers sem confirmação ao vivo (rodar `scripts/diagnosticar_fotos.py`)
 
 **Situação (23/09):** helper, dedup, diagnóstico, export e carrossel prontos e testados. O
 card já mostra as fotos que chegarem em `fotos`, e a imagem genérica sinalizada quando não
-chega nada. **Falta só os scrapers preencherem `fotos`** — adiado porque a rede do ambiente
-de desenvolvimento bloqueia os portais. Para retomar, na máquina com acesso: rodar
+chega nada. **Atualização:** a extração foi ligada em todos os scrapers, nos formatos conhecidos de
+cada portal, com testes sobre HTML sintético. Como a rede do ambiente bloqueia os
+portais, **não foi confirmada ao vivo**: rode `scripts/diagnosticar_fotos.py`. Para retomar, na máquina com acesso: rodar
 `diagnosticar-scraper` em cada portal, confirmar onde está a foto e chamar
 `extrair_fotos`/`fotos_de_card` no dict do anúncio (um portal por commit). Suspeitas
 iniciais em F1.1; o QuintoAndar provavelmente precisa montar a URL do CDN a partir de
@@ -74,7 +75,7 @@ Decidido em 23/09/2026.
 | --- | --- | --- |
 | F1.1 ⏳ | **Diagnóstico por portal**: salvar 1 HTML de cada portal (busca de referência) e anotar onde está a foto e quantas vêm por anúncio. Suspeitas a confirmar: JSON-LD `image` (VivaReal, Zap, ChavesNaMão, Mercado Livre, NetImóveis); payload RSC `medias`/`images` (Grupo ZAP — estender `rsc_grupozap.py`, que já faz join por `href`); `__NEXT_DATA__` (QuintoAndar, provavelmente só o id da imagem, precisa montar a URL do CDN); `<img data-src>` dos cards (ImovelWeb, OLX). | `scraper/*.py` |
 | F1.2 ✅ | Helper `extrair_fotos(item) -> list[str]` em `parser.py`: aceita `str`, `list[str]`, `list[ImageObject]`, resolve URL relativa, troca placeholders de tamanho do CDN (ex.: `{width}x{height}` do Grupo ZAP), deduplica, limita a ~10. Com testes. | `scraper/parser.py`, `tests/test_fotos.py` |
-| F1.3 ⏳ | Usar o helper em cada scraper, preenchendo `registro['fotos']`. Um portal por commit. | `scraper/*.py` |
+| F1.3 🟡 | Usar o helper em cada scraper, preenchendo `registro['fotos']`. Um portal por commit. | `scraper/*.py` |
 | F1.4 ✅ | Deduplicação cross-portal: ao fundir o mesmo imóvel de portais diferentes, **unir** as fotos em vez de manter só as do representante. | `services/deduplicador.py` |
 | F1.5 ✅ | Diagnóstico: `DiagnosticoColeta.com_foto` (igual ao `com_coordenada`) — se um portal mudar o HTML e as fotos zerarem, aparece em vez de virar card sem imagem sem explicação. | `models.py`, `services/search.py` |
 | F1.6 ✅ | **Carrossel no card**: área de imagem no topo do `ResultCard` (proporção fixa, 16:10), setas + contador "3/8" + swipe no touch, `loading="lazy"`, `referrerPolicy="no-referrer"`, `onError` pula a foto quebrada. Sem foto → **imagem genérica com selo visível "Foto ilustrativa"** (e `alt`/tooltip dizendo que o anúncio não tem foto), para nunca ser confundida com foto real do imóvel; o card continua. Sem lib nova. | `components/FotoCarrossel.tsx` (novo), `ResultCard.tsx` |
