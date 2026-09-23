@@ -114,7 +114,7 @@ diagnóstico diz quantos saíram, e repetir a busca sem o filtro não devolve o 
 
 ---
 
-## F3 — Mapa / API de tiles (agente `mapa-tiles`)
+## F3 — Mapa / API de tiles (agente `mapa-tiles`) — ✅ feito (falta testar com chave real na sua máquina)
 
 **Situação hoje:** `Mapa.tsx` usa tiles raster da CARTO, que passou a exigir chave. A chave
 vem de `VITE_CARTO_API_KEY` em `frontend/.env.local` e é **embutida no build**. Três jeitos
@@ -128,11 +128,11 @@ de quebrar:
 
 | # | Tarefa | Onde |
 | --- | --- | --- |
-| F3.1 | **Diagnóstico**: confirmar qual dos 3 casos é o seu (ou se é outro — cota, domínio não autorizado na CARTO, rede). | — |
-| F3.2 | **Recomendado — proxy de tiles no backend**: `GET /api/tiles/{z}/{x}/{y}.png` lê `CARTO_API_KEY` do `.env` do **backend**, repassa para a CARTO e guarda em cache em disco. A chave sai do bundle JS (hoje qualquer um que abre o site a vê), muda sem rebuild e o cache reduz o consumo da cota. | `main.py`, `services/tiles.py` (novo), `.env.example` |
-| F3.3 | **Fallback sem chave**: se o proxy responder erro (sem chave, cota estourada), trocar para um provedor sem chave (Esri World Dark Gray, ou OSM padrão com filtro CSS escuro) e mostrar aviso discreto no mapa em vez de tile quebrado. | `components/Mapa.tsx` |
-| F3.4 | Deploy: incluir `CARTO_API_KEY` no `.env.deploy.example`; remover a dependência de build-arg. | `.env.deploy.example`, `Dockerfile` |
-| F3.5 | Atualizar `COMO-RODAR.md` (a chave passa do `.env.local` do frontend para o `.env` do backend). | `COMO-RODAR.md` |
+| F3.1 ⏳ | **Diagnóstico**: confirmar qual dos 3 casos é o seu (ou se é outro — cota, domínio não autorizado na CARTO, rede). | — |
+| F3.2 ✅ | **Recomendado — proxy de tiles no backend**: `GET /api/tiles/{z}/{x}/{y}.png` lê `CARTO_API_KEY` do `.env` do **backend**, repassa para a CARTO e guarda em cache em disco. A chave sai do bundle JS (hoje qualquer um que abre o site a vê), muda sem rebuild e o cache reduz o consumo da cota. | `main.py`, `services/tiles.py` (novo), `.env.example` |
+| F3.3 ✅ | **Fallback sem chave**: se o proxy responder erro (sem chave, cota estourada), trocar para um provedor sem chave (escolhido: OSM padrão com filtro CSS escuro) e mostrar aviso discreto no mapa em vez de tile quebrado. | `components/Mapa.tsx` |
+| F3.4 ✅ | Deploy: incluir `CARTO_API_KEY` no `.env.deploy.example`; remover a dependência de build-arg. | `.env.deploy.example`, `Dockerfile` |
+| F3.5 ✅ | Atualizar `COMO-RODAR.md` (a chave passa do `.env.local` do frontend para o `.env` do backend). | `COMO-RODAR.md` |
 
 **Alternativa mais simples (se não quiser proxy):** só F3.3 + passar `ARG` no `Dockerfile` +
 aviso no `.bat` quando o `dist/` foi gerado sem chave.

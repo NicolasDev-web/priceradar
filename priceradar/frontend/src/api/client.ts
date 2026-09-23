@@ -24,6 +24,16 @@ export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
 
+/**
+ * Molde de URL dos tiles do mapa, servidos pelo proxy do backend (a chave da
+ * CARTO fica lá, não no bundle). O token vai na query porque o Leaflet pede
+ * tiles como <img>, que não manda cabeçalho Authorization.
+ */
+export function urlTilesMapa(): string {
+  const token = encodeURIComponent(getToken() ?? '')
+  return `${BASE_URL}/api/tiles/{z}/{x}/{y}.png?r={r}&t=${token}`
+}
+
 function setToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token)
 }

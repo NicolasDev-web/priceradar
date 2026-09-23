@@ -55,6 +55,12 @@ def _token_valido(token: str) -> bool:
         return False
 
 
+def token_valido(token: str | None) -> bool:
+    """Para rotas que não recebem o cabeçalho Authorization (tiles do mapa,
+    pedidos pelo <img> do Leaflet, que não permite cabeçalho)."""
+    return bool(token) and _token_valido(token)
+
+
 async def exigir_login(authorization: str | None = Header(default=None)) -> None:
     """Dependency aplicada via `router_protegido` a todas as rotas /api/*
     exceto /api/login e /api/health."""

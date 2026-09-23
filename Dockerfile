@@ -47,7 +47,8 @@ COPY --from=frontend /frontend/dist /app/priceradar/frontend/dist
 ENV DATABASE_URL="sqlite+aiosqlite:////data/priceradar.db" \
     BAIRROS_CACHE_PATH=/data/bairros_por_cidade.json \
     HISTORICO_FONTES_PATH=/data/historico_fontes.json \
-    BROWSER_PROFILE_DIR=/data/browser_profile
+    BROWSER_PROFILE_DIR=/data/browser_profile \
+    TILES_CACHE_DIR=/data/tiles
 VOLUME /data
 
 EXPOSE 8002

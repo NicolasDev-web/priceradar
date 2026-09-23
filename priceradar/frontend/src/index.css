@@ -69,6 +69,13 @@
    O componente Mapa importa o CSS do Leaflet, que traz popup branco,
    controles brancos e fundo cinza — tudo berrando sobre o #070F0B do app.
    ------------------------------------------------------------------ */
+/* Plano B do mapa (tile claro do OSM) escurecido para combinar com o painel.
+   invert + hue-rotate(180) devolve os matizes originais (água segue azul,
+   parque segue verde) com luminância invertida. */
+.tiles-fallback {
+  filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(0.9) saturate(0.35);
+}
+
 .leaflet-container {
   background: #070F0B;   /* buraco entre tiles não pisca cinza claro */
   font-family: 'Space Grotesk', system-ui, sans-serif;

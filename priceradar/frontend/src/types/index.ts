@@ -39,6 +39,9 @@ export interface Empreendimento {
 export interface DiagnosticoColeta {
   total_bruto: number
   com_coordenada: number
+  /** Anúncios com ao menos uma foto. Portal com muitos sem foto = extração quebrou. */
+  com_foto?: number
+  sem_foto_por_portal?: Record<string, number>
   fontes_ok: string[]
   fontes_zero: string[]
   fontes_erro: string[]

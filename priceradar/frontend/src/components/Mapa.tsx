@@ -26,12 +26,13 @@
  * PNG fixo não codifica preço/m² — e de quebra evita o ícone padrão do
  * Leaflet, que o Vite não emite e que renderiza como 404.
  */
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ExternalLink, MapPin } from 'lucide-react'
 import L from 'leaflet'
 import { CircleMarker, MapContainer, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 
+import { urlTilesMapa } from '../api/client'
 import type { Empreendimento, OrigemCoordenada } from '../types'
 import { desvioPercentual, faixaPorPreco, rotuloDesvio } from '../utils/posicionamento'
 
@@ -58,19 +59,24 @@ const PORTAL_LABEL: Record<string, string> = {
 /** Mesmos dados do OpenStreetMap, desenhados para fundo escuro. O tile branco
  *  padrão brilharia como um retângulo de luz no meio do painel.
  *
- *  A CARTO aposentou o acesso livre aos tiles raster — sem `key` na URL, o
- *  "tile" que volta é uma imagem escrita "API KEY REQUIRED" por cima (o nome
- *  do parâmetro é `key`, não `api_key` — a doc oficial usa os dois nomes em
- *  lugares diferentes, só `key` funciona de fato, testado). A chave é
- *  gratuita (5M tiles/mês): carto.com/basemaps/apikey. Fica em `.env.local`
- *  (nunca commitado), não em `.env.production`. */
-const CARTO_API_KEY = import.meta.env.VITE_CARTO_API_KEY as string | undefined
-const TILE_URL = CARTO_API_KEY
-  ? `https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`
-  : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+ *  Os tiles da CARTO passam pelo backend (`/api/tiles`), que guarda a chave e
+ *  faz cache — ver `backend/services/tiles.py`. Antes a chave ia no bundle via
+ *  `VITE_CARTO_API_KEY`: ficava pública e só valia a partir do próximo build. */
 const TILE_ATTR =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
   '&copy; <a href="https://carto.com/attributions">CARTO</a>'
+
+/** Plano B, sem chave: o tile padrão do OpenStreetMap, escurecido por CSS
+ *  (`.tiles-fallback` no index.css). Entra quando o proxy responde erro — sem
+ *  `CARTO_API_KEY` no backend, cota estourada, CARTO fora. Uso leve como o
+ *  deste app cabe na política de uso dos tiles do OSM, com atribuição. */
+const TILE_URL_FALLBACK = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+const TILE_ATTR_FALLBACK =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+
+// Um tile isolado que falha (rede oscilando) não deve derrubar o mapa inteiro
+// para o plano B; três seguidos já dizem que o proxy não vai entregar.
+const ERROS_PARA_FALLBACK = 3
 
 interface Grupo {
   chave: string
@@ -115,6 +121,10 @@ function AjustarVista({ pontos }: { pontos: L.LatLngTuple[] }) {
 }
 
 export function Mapa({ empreendimentos, precoM2Medio, semLocalizacao, comCoordenada }: Props) {
+  // Lido na montagem: o token não muda enquanto o mapa está na tela.
+  const urlTiles = useMemo(() => urlTilesMapa(), [])
+  const [usarFallback, setUsarFallback] = useState(false)
+  const errosTile = useRef(0)
   const grupos = useMemo<Grupo[]>(() => {
     const porPosicao = new Map<string, Empreendimento[]>()
 
@@ -192,7 +202,7 @@ export function Mapa({ empreendimentos, precoM2Medio, semLocalizacao, comCoorden
         </p>
       </div>
 
-      <div className="rounded-card overflow-hidden border border-mrv-border">
+      <div className="relative rounded-card overflow-hidden border border-mrv-border">
         <MapContainer
           // O mapa fica no meio de uma página longa: sequestrar a roda do
           // mouse para dar zoom seria hostil. Zoom pelos botões e duplo clique.
@@ -201,7 +211,27 @@ export function Mapa({ empreendimentos, precoM2Medio, semLocalizacao, comCoorden
           zoom={13}
           className="h-[420px] w-full"
         >
-          <TileLayer url={TILE_URL} attribution={TILE_ATTR} />
+          {usarFallback ? (
+            <TileLayer
+              key="fallback"
+              url={TILE_URL_FALLBACK}
+              attribution={TILE_ATTR_FALLBACK}
+              className="tiles-fallback"
+            />
+          ) : (
+            <TileLayer
+              key="carto"
+              url={urlTiles}
+              attribution={TILE_ATTR}
+              eventHandlers={{
+                tileload: () => { errosTile.current = 0 },
+                tileerror: () => {
+                  errosTile.current += 1
+                  if (errosTile.current >= ERROS_PARA_FALLBACK) setUsarFallback(true)
+                },
+              }}
+            />
+          )}
           <AjustarVista pontos={pontos} />
 
           {/* Estimados primeiro: são os círculos grandes, e desenhados depois
@@ -245,6 +275,17 @@ export function Mapa({ empreendimentos, precoM2Medio, semLocalizacao, comCoorden
               )
             })}
         </MapContainer>
+        {usarFallback && (
+          // Dito em voz alta, não trocado em silêncio: sem isto o fundo claro
+          // escurecido parece defeito de tema, e ninguém vai conferir a chave.
+          <p
+            className="absolute top-2 right-2 z-[500] max-w-[260px] text-[10px] leading-snug text-amber-200 bg-black/70 border border-amber-700/40 rounded px-2 py-1 pointer-events-none"
+            role="status"
+          >
+            Mapa alternativo (OpenStreetMap): o mapa escuro está indisponível — confira a
+            CARTO_API_KEY no .env do backend.
+          </p>
+        )}
       </div>
     </section>
   )
