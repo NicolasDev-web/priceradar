@@ -57,14 +57,10 @@ F0.2/F0.3 corrigem os dois juntos.
 **Situação hoje:** nenhum scraper extrai imagem (`grep -i "image\|foto"` em `scraper/` não
 acha nada). O card não tem área de imagem.
 
-**Estratégia em duas camadas** — não multiplicar requisições na hora da busca, que é o que
-os portais pontuam como robô (ver `.claude/documentacaoantibot.md`):
-
-1. **Na busca (custo zero):** extrair as fotos que já vêm na página de listagem. Quase todo
-   portal põe ao menos a capa, e vários põem várias.
-2. **Sob demanda (galeria completa):** quando o usuário abre o carrossel e o anúncio tem
-   poucas fotos, o front chama `GET /api/fotos?url=<url_anuncio>`, o backend busca a página
-   de detalhe **uma vez**, extrai a galeria e guarda em cache em disco.
+**Estratégia:** usar só as fotos que já vêm na página de resultados de cada portal — custo
+zero de requisição. Não buscar a página de detalhe de cada anúncio: multiplicaria as
+requisições, que é o que os portais pontuam como robô (ver `.claude/documentacaoantibot.md`).
+Decidido em 23/09/2026.
 
 ### Tarefas
 
@@ -75,21 +71,22 @@ os portais pontuam como robô (ver `.claude/documentacaoantibot.md`):
 | F1.3 | Usar o helper em cada scraper, preenchendo `registro['fotos']`. Um portal por commit. | `scraper/*.py` |
 | F1.4 | Deduplicação cross-portal: ao fundir o mesmo imóvel de portais diferentes, **unir** as fotos em vez de manter só as do representante. | `services/deduplicador.py` |
 | F1.5 | Diagnóstico: `DiagnosticoColeta.com_foto` (igual ao `com_coordenada`) — se um portal mudar o HTML e as fotos zerarem, aparece em vez de virar card sem imagem sem explicação. | `models.py`, `services/search.py` |
-| F1.6 | **Carrossel no card**: área de imagem no topo do `ResultCard` (proporção fixa, 16:10), setas + contador "3/8" + swipe no touch, `loading="lazy"`, `referrerPolicy="no-referrer"`, `onError` pula a foto quebrada. Sem foto → placeholder com ícone, não some o card. Sem lib nova. | `components/FotoCarrossel.tsx` (novo), `ResultCard.tsx` |
+| F1.6 | **Carrossel no card**: área de imagem no topo do `ResultCard` (proporção fixa, 16:10), setas + contador "3/8" + swipe no touch, `loading="lazy"`, `referrerPolicy="no-referrer"`, `onError` pula a foto quebrada. Sem foto → **imagem genérica com selo visível "Foto ilustrativa"** (e `alt`/tooltip dizendo que o anúncio não tem foto), para nunca ser confundida com foto real do imóvel; o card continua. Sem lib nova. | `components/FotoCarrossel.tsx` (novo), `ResultCard.tsx` |
 | F1.7 | Lightbox ao clicar na foto (tela cheia, setas do teclado, Esc fecha). | `components/FotoCarrossel.tsx` |
-| F1.8 | Endpoint `GET /api/fotos?url=` (galeria completa sob demanda) com **allowlist de domínios dos portais** (senão é SSRF), cache em disco em `backend/data/`, e rate-limit por portal. | `main.py`, `services/fotos.py` (novo) |
-| F1.9 | **Só se o hotlink falhar** no F1.1: proxy `GET /api/imagem?u=` com a mesma allowlist e cache. Não fazer se `referrerPolicy="no-referrer"` resolver. | `main.py` |
+| ~~F1.8~~ | ~~Galeria completa sob demanda~~ — **descartada**: basta mostrar as fotos da listagem. | — |
+| F1.9 | **Só se o hotlink falhar** no F1.1: proxy `GET /api/imagem?u=` com **allowlist de domínios dos portais** (senão é SSRF) e cache em disco. Não fazer se `referrerPolicy="no-referrer"` resolver. | `main.py` |
 | F1.10 | Export: coluna "Foto (capa)" com a primeira URL. | `services/export.py` |
 
-### Decisões a confirmar com você
+### Decisões tomadas
 
-- **"Empreendimentos devem vir com fotos"** — anúncio sem foto: (a) aparece com placeholder
-  *(recomendado — descartar derruba volume, que já é o problema da F4)*, ou (b) é descartado?
-- Galeria completa sob demanda (F1.8) custa 1 requisição por anúncio aberto. Se preferir não
-  arriscar bloqueio, fica só com as fotos da listagem.
+- **Anúncio sem foto aparece**, com imagem genérica claramente marcada como genérica. Não é
+  descartado. O normal é todo anúncio vir com foto, então a imagem genérica deve ser exceção —
+  se passar a ser comum num portal, é sinal de que a extração quebrou (o `com_foto` do F1.5
+  mostra isso).
+- **Sem galeria sob demanda**: só as fotos que vêm na página de resultados.
 
 **Pronto quando:** na busca de referência (Fortaleza-CE, R$ 280k–500k, 2 quartos), ≥ 80% dos
-cards com ao menos 1 foto; VivaReal/Zap com várias; carrossel funcionando em desktop e celular;
+cards com foto real (a imagem genérica é exceção); VivaReal/Zap com várias; carrossel funcionando em desktop e celular;
 `pytest` e `npm run build` verdes.
 
 ---

@@ -6,7 +6,7 @@ tools: Read, Edit, Write, Glob, Grep, Bash
 
 Você é o agente de **fotos dos empreendimentos** do PriceRadar. Sua frente é a F1 do
 `PLANO_MELHORIAS.md` (raiz do repositório) — leia-a inteira antes de começar e trabalhe
-numa tarefa por vez, na ordem F1.1 → F1.10, a menos que peçam uma específica.
+numa tarefa por vez, na ordem F1.1 → F1.10 (a F1.8 foi descartada), a menos que peçam uma específica.
 
 ## Contexto que você precisa saber
 
@@ -19,8 +19,8 @@ numa tarefa por vez, na ordem F1.1 → F1.10, a menos que peçam uma específica
   + migração em `database/connection.py::_migrar_colunas`, `repositories/busca_repo.py`
   (gravar **e** reconstruir do cache), `frontend/src/types/index.ts`.
 - A coleta é espaçada de propósito (`.claude/documentacaoantibot.md`). **Nunca** acrescente
-  requisição por anúncio dentro da busca. Galeria completa só sob demanda (endpoint
-  `/api/fotos`), com cache em disco e allowlist de domínios.
+  requisição por anúncio — nem na busca, nem sob demanda. Decisão do dono do produto:
+  **só as fotos que já vêm na página de resultados**. Não existe galeria completa.
 
 ## Como trabalhar
 
@@ -37,9 +37,13 @@ numa tarefa por vez, na ordem F1.1 → F1.10, a menos que peçam uma específica
 5. Frontend: componente `FotoCarrossel.tsx` sem dependência nova. Tema escuro do projeto
    (tokens `mrv-*` do `tailwind.config.ts`). Imagem com proporção fixa para o grid não pular,
    `loading="lazy"`, `referrerPolicy="no-referrer"`, `alt` descritivo, botões acessíveis por
-   teclado. Sem foto → placeholder, o card continua.
-6. Endpoint novo que recebe URL (`/api/fotos`, `/api/imagem`) **exige** allowlist de hosts
-   dos portais — sem isso é SSRF.
+   teclado.
+6. **Sem foto → imagem genérica, nunca descarte.** Ela precisa ser inconfundível com foto
+   real: selo visível "Foto ilustrativa" sobre a imagem e `alt`/`title` dizendo que o
+   anúncio não tem foto. O normal é todo anúncio vir com foto — se um portal passar a vir
+   com muitas genéricas, a extração quebrou; investigue em vez de aceitar.
+7. Se o proxy de imagem (F1.9) for necessário, ele **exige** allowlist de hosts dos
+   portais — sem isso é SSRF.
 
 ## Verificação obrigatória antes de cada commit
 
