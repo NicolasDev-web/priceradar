@@ -4,7 +4,6 @@ Estratégia: Playwright renderiza a página e extrai os cards de anúncio.
 Busca múltiplas páginas em paralelo para maior volume.
 Padrão de URL de página 2+: apartamentos-venda-cidade-estado-pagina-N.html
 """
-import asyncio
 import logging
 import os
 import re
@@ -13,6 +12,7 @@ from datetime import datetime
 
 from scraper.browser import buscar_html_playwright
 from scraper.http import buscar_html
+from scraper.paginacao import paginar
 from scraper.parser import (
     calcular_preco_m2,
     extrair_construtora,
@@ -177,25 +177,9 @@ async def scrape_imovelweb(
     estado_slug = partes[1].strip().lower() if len(partes) > 1 else "sp"
     cidade_normalizada = normalizar_cidade(partes[0].strip())
 
-    tarefas = [
-        _fetch_pagina_imovelweb(nome_cidade, estado_slug, preco_min, preco_max, quartos, p, cidade_normalizada)
-        for p in range(1, MAX_PAGINAS + 1)
-    ]
-    paginas = await asyncio.gather(*tarefas, return_exceptions=True)
-
-    # Deduplica por URL dentro do portal
-    vistos: set[str] = set()
-    resultados = []
-    for pg in paginas:
-        if not isinstance(pg, list):
-            continue
-        for item in pg:
-            url = item.get("url_anuncio", "").split("?")[0]
-            if url and url not in vistos:
-                vistos.add(url)
-                resultados.append(item)
-            elif not url:
-                resultados.append(item)
-
-    logger.info(f"ImovelWeb: {len(resultados)} anúncios encontrados ({MAX_PAGINAS} páginas)")
+    resultados = await paginar(
+        lambda p: _fetch_pagina_imovelweb(nome_cidade, estado_slug, preco_min, preco_max, quartos, p, cidade_normalizada),
+        MAX_PAGINAS,
+        "ImovelWeb",
+    )
     return resultados

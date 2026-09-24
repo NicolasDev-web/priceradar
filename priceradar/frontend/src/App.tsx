@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { buscarConcorrentes, exportarExcel, getToken } from './api/client'
 import { ComparativoBairros } from './components/ComparativoBairros'
 import { EvolucaoChart } from './components/EvolucaoChart'
+import { FunilColeta } from './components/FunilColeta'
 import { HistoricoPanel } from './components/HistoricoPanel'
 import { KpiBar } from './components/KpiBar'
 import { LoadingState } from './components/LoadingState'
@@ -300,6 +301,10 @@ export default function App() {
                       de preço ou remova o filtro de tipologia para uma base maior.
                     </p>
                   </div>
+                )}
+
+                {resultado.diagnostico && !resultado.do_cache && (
+                  <FunilColeta diagnostico={resultado.diagnostico} exibidos={resultado.total} />
                 )}
 
                 <KpiBar dados={resultado} onEditarMRV={() => setMostrarFormMRV(true)} />

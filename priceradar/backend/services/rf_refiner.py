@@ -62,7 +62,9 @@ _RE_PRECO_TITULO = re.compile(
 
 # ── Agente 2: Blindagem de outliers de preço de entrada ──────────────────────
 
-def _filtrar_preco_entrada(listings: list[dict]) -> tuple[list[dict], int]:
+def _filtrar_preco_entrada(
+    listings: list[dict], motivos: dict[str, int] | None = None
+) -> tuple[list[dict], int]:
     """
     Remove anúncios cujo preco_m2 está fora da banda plausível do grupo.
     Dois critérios independentes:
@@ -72,7 +74,8 @@ def _filtrar_preco_entrada(listings: list[dict]) -> tuple[list[dict], int]:
        parcela; o superior pega área agregada e erro de parsing.
     2. nome_anuncio parece ser um preço monetário (ex.: "R$ 440.000").
 
-    Retorna (lista filtrada, qtd removida).
+    Retorna (lista filtrada, qtd removida). Se `motivos` vier, soma nele a
+    contagem por critério — é o que chega ao diagnóstico da busca.
     """
     remover: set[int] = set()
 
@@ -121,6 +124,13 @@ def _filtrar_preco_entrada(listings: list[dict]) -> tuple[list[dict], int]:
                     f"Outlier preço-relativo (alto): idx={i} preco_m2={preco:.0f} "
                     f"> {_RATIO_MAXIMO_PRECO_GRUPO:.0%} × mediana={mediana_grupo:.0f}"
                 )
+
+    if motivos is not None:
+        titulo = sum(1 for i in remover if _RE_PRECO_TITULO.match(str(listings[i].get("nome_anuncio") or "")))
+        if titulo:
+            motivos["titulo_e_preco"] = motivos.get("titulo_e_preco", 0) + titulo
+        if len(remover) - titulo:
+            motivos["preco_m2_fora_do_grupo"] = motivos.get("preco_m2_fora_do_grupo", 0) + len(remover) - titulo
 
     filtrados = [l for i, l in enumerate(listings) if i not in remover]
     removidos = len(remover)
@@ -278,17 +288,22 @@ def refinar_com_random_forest(
     listings: list[dict],
     threshold_anomalia: float = _CONTAMINATION,
     threshold_desvio_m2: float = _DESVIO_THRESHOLD,
+    descartes: dict[str, int] | None = None,
 ) -> list[dict]:
     """
     Filtra e pontua os anúncios.
 
     Ordem: blindagem de preço de entrada → imputação → IsolationForest → RF.
     Conservador: nunca filtra abaixo de _MIN_AMOSTRAS_FILTRO amostras.
+
+    `descartes`, se vier, recebe a contagem do que saiu por motivo. Sem isso o
+    refinador cortava em silêncio e não havia como medir se estava derrubando
+    anúncio bom (F4.6 do PLANO_MELHORIAS.md).
     """
     total_entrada = len(listings)
 
     # ── Etapa 0: Blindagem de outliers de preço de entrada (Agente 2) ───────
-    listings, removidos_entrada = _filtrar_preco_entrada(listings)
+    listings, removidos_entrada = _filtrar_preco_entrada(listings, descartes)
 
     # ── Etapa 1: Imputação de campos faltantes (Agente 1) ────────────────────
     listings = _imputar_campos(listings)
@@ -372,6 +387,9 @@ def refinar_com_random_forest(
                 f"RF Refiner rejeitou: {listing.get('nome_anuncio')} "
                 f"preco_m2={listing.get('preco_m2')} score={listing['rf_score']:.3f}"
             )
+
+    if descartes is not None and rejeitados:
+        descartes["rejeitado_rf"] = descartes.get("rejeitado_rf", 0) + rejeitados
 
     logger.info(
         f"RF Refiner: {total_entrada} entrada → {len(aprovados)} aprovados "

@@ -13,7 +13,6 @@ busca. O JSON-LD tem a área de todos.
 Os parâmetros de filtro da URL (preço, tipo) são ignorados pelo site, então
 a filtragem é feita aqui e reforçada depois por services/validacao.py.
 """
-import asyncio
 import json
 import logging
 import os
@@ -24,6 +23,7 @@ from datetime import datetime
 import httpx
 from bs4 import BeautifulSoup
 
+from scraper.paginacao import paginar
 from scraper.parser import calcular_preco_m2, extrair_construtora, extrair_fotos, normalizar_cidade
 from services.texto import sem_acento
 
@@ -223,17 +223,9 @@ async def scrape_chavesnamao(
     vistos_global: set[str] = set()
 
     async with httpx.AsyncClient(headers=_HEADERS, timeout=20, follow_redirects=True) as client:
-        # Busca todas as páginas em paralelo
-        tarefas = [
-            _fetch_pagina(client, nome_cidade, estado, preco_min, preco_max, quartos, p, cidade_normalizada, vistos_global)
-            for p in range(1, MAX_PAGINAS + 1)
-        ]
-        paginas = await asyncio.gather(*tarefas, return_exceptions=True)
-
-    resultados = []
-    for pg in paginas:
-        if isinstance(pg, list):
-            resultados.extend(pg)
-
-    logger.info(f"ChavesNaMão: {len(resultados)} anúncios encontrados ({MAX_PAGINAS} páginas)")
+        resultados = await paginar(
+            lambda p: _fetch_pagina(client, nome_cidade, estado, preco_min, preco_max, quartos, p, cidade_normalizada, vistos_global),
+            MAX_PAGINAS,
+            "ChavesNaMão",
+        )
     return resultados
