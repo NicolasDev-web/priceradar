@@ -324,12 +324,18 @@ async def _executar_busca_interna(
             raw_unicos_url.append(item)
         elif not chave:
             raw_unicos_url.append(item)
+    # Duplicata não é perda de mercado, mas entra na conta: sem ela, bruto menos
+    # descartes não fecha com o total e o diagnóstico parece mentir.
+    if len(raw_todos) - len(raw_unicos_url):
+        descartes['duplicata_mesma_url'] = descartes.get('duplicata_mesma_url', 0) + len(raw_todos) - len(raw_unicos_url)
 
     # Deduplicação cross-portal via RF (Agente 2)
     if DEDUP_CROSS_PORTAL_HABILITADO and len(raw_unicos_url) > 1:
         total_antes = len(raw_unicos_url)
         raw_unicos = deduplicar_cross_portal(raw_unicos_url)
         logger.info(f"Dedup cross-portal: {total_antes} → {len(raw_unicos)}")
+        if total_antes - len(raw_unicos):
+            descartes['duplicata_outro_portal'] = descartes.get('duplicata_outro_portal', 0) + total_antes - len(raw_unicos)
     else:
         raw_unicos = raw_unicos_url
 
@@ -340,7 +346,7 @@ async def _executar_busca_interna(
 
     # Refinamento RF: imputação + remoção de outliers (Agente 3)
     if RF_REFINER_HABILITADO and raw_unicos:
-        raw_unicos = refinar_com_random_forest(raw_unicos)
+        raw_unicos = refinar_com_random_forest(raw_unicos, descartes=descartes)
 
     # Quantos vieram com coordenada do portal, antes de qualquer estimativa —
     # é o número que denuncia uma mudança de formato nos portais.

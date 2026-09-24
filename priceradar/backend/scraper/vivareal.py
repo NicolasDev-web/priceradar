@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import os
@@ -10,6 +9,7 @@ from bs4 import BeautifulSoup
 
 from scraper.browser import buscar_html_playwright
 from scraper.http import buscar_html
+from scraper.paginacao import paginar
 from scraper.parser import (
     calcular_preco_m2,
     classificar_edificacao,
@@ -226,24 +226,9 @@ async def scrape_vivareal(
     estado, cidade_slug = _extrair_estado_cidade(cidade)
     cidade_normalizada = normalizar_cidade(cidade.split(',')[0])
 
-    tarefas = [
-        _fetch_pagina_vivareal(cidade_slug, estado, preco_min, preco_max, quartos, bairro, p, cidade_normalizada)
-        for p in range(1, MAX_PAGINAS + 1)
-    ]
-    paginas = await asyncio.gather(*tarefas, return_exceptions=True)
-
-    vistos: set[str] = set()
-    resultados = []
-    for pg in paginas:
-        if not isinstance(pg, list):
-            continue
-        for item in pg:
-            url = item.get("url_anuncio", "").split("?")[0]
-            if url and url not in vistos:
-                vistos.add(url)
-                resultados.append(item)
-            elif not url:
-                resultados.append(item)
-
-    logger.info(f"VivaReal: {len(resultados)} anúncios únicos ({MAX_PAGINAS} páginas)")
+    resultados = await paginar(
+        lambda p: _fetch_pagina_vivareal(cidade_slug, estado, preco_min, preco_max, quartos, bairro, p, cidade_normalizada),
+        MAX_PAGINAS,
+        "VivaReal",
+    )
     return resultados

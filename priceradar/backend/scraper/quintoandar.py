@@ -5,7 +5,6 @@ server-side e embute o estado inicial (incl. listings) em __NEXT_DATA__.
 Estrutura: props.pageProps.initialState.houses[ID] → dados do imóvel
            props.pageProps.initialState.search.visibleHouses.pages[0] → IDs visíveis
 """
-import asyncio
 import json
 import logging
 import os
@@ -15,6 +14,7 @@ from datetime import datetime
 
 import httpx
 
+from scraper.paginacao import paginar
 from scraper.parser import calcular_preco_m2, extrair_fotos, normalizar_cidade
 from services.texto import sem_acento
 
@@ -199,17 +199,14 @@ async def scrape_quintoandar(
     slug = _cidade_para_slug(nome_cidade, estado)
 
     base_url = f"{QA_BASE}/comprar/imovel/{slug}"
-    urls = [base_url] + [f"{base_url}?pagina={p}" for p in range(2, MAX_PAGINAS_QA + 1)]
+    def _url(p: int) -> str:
+        return base_url if p == 1 else f"{base_url}?pagina={p}"
 
     vistos: set[str] = set()
     async with httpx.AsyncClient(headers=_HEADERS, timeout=25, follow_redirects=True) as client:
-        tarefas = [_fetch_pagina_qa(client, u, cidade_normalizada, preco_min, preco_max, quartos, vistos) for u in urls]
-        paginas = await asyncio.gather(*tarefas, return_exceptions=True)
-
-    resultados = []
-    for pg in paginas:
-        if isinstance(pg, list):
-            resultados.extend(pg)
-
-    logger.info(f"QuintoAndar: {len(resultados)} anúncios encontrados ({MAX_PAGINAS_QA} páginas)")
+        resultados = await paginar(
+            lambda p: _fetch_pagina_qa(client, _url(p), cidade_normalizada, preco_min, preco_max, quartos, vistos),
+            MAX_PAGINAS_QA,
+            "QuintoAndar",
+        )
     return resultados

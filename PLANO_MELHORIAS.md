@@ -143,19 +143,29 @@ Docker, e degrada com aviso (não com "API KEY REQUIRED") quando a chave falha.
 
 ---
 
-## F4 — Busca: mais sites e mais volume (agente `coleta-fontes`)
+## F4 — Busca: mais sites e mais volume (agente `coleta-fontes`) — 🟡 F4.3 e F4.6 com a base pronta; o resto depende de acesso aos portais
+
+**Situação (24/09):** feito sem rede o que dá para provar com teste:
+- **F4.3:** `scraper/paginacao.py` pede as páginas em lotes (do tamanho de `MAX_SIMULTANEAS_POR_HOST`)
+  e para quando um lote inteiro não traz anúncio novo. Aplicado em VivaReal, Zap, ChavesNaMão,
+  ImovelWeb e QuintoAndar. Os tetos (`*_MAX_PAGINAS` no `.env`) **não foram alterados**: sobem depois
+  da medição da F4.1, e com a parada antecipada subir custa pouco quando o inventário é curto.
+- **F4.6:** refinador (outlier de preço, título-preço, RF) e deduplicação agora contam o que
+  removem em `descartados_por_motivo`, e a tela mostra o funil "coletados → exibidos" com os
+  motivos. Ajustar regra é o passo seguinte, com esses números de buscas reais.
+
 
 Continuação do `PROMPT_AGENTES_BUSCA.md`, com foco em volume e novas fontes. **Sempre**
 começar pela skill `diagnosticar-scraper` — a tabela de volumes daquele documento é de agosto.
 
 | # | Tarefa | Onde |
 | --- | --- | --- |
-| F4.1 | **Linha de base**: rodar `diagnosticar-scraper` em todos os 8 portais e registrar bruto por portal em `BASELINE.json`. Nada muda antes disso. | `BASELINE.json` |
+| F4.1 ⏳ | **Linha de base**: rodar `diagnosticar-scraper` em todos os 8 portais e registrar bruto por portal em `BASELINE.json`. Nada muda antes disso. | `BASELINE.json` |
 | F4.2 | Consertar quem está devolvendo 0 hoje (candidatos: Mercado Livre, NetImóveis, QuintoAndar, OLX — confirmar no F4.1). Um portal por commit. | `scraper/*.py` |
-| F4.3 | Paginação uniforme: todo scraper busca N páginas (teto configurável no `.env`) e para ao receber página vazia/repetida, respeitando o espaçamento anti-bot. | `scraper/*.py` |
+| F4.3 ✅ | Paginação uniforme: todo scraper busca N páginas (teto configurável no `.env`) e para ao receber página vazia/repetida, respeitando o espaçamento anti-bot. | `scraper/*.py` |
 | F4.4 | Busca por bairro nos portais que só o VivaReal faz hoje (Zap, ChavesNaMão) quando o usuário escolhe bairros — o recorte pós-coleta joga fora o que a paginação trouxe de outros bairros. | `scraper/*.py`, `services/search.py` |
 | F4.5 | **Fontes novas** (skill `adicionar-fonte`), avaliar nesta ordem e implementar as viáveis: Wimóveis, 123i, Loft, Imóvel Guide, sites de construtoras concorrentes (Direcional, Cury, Tenda, Pacaembu — lançamentos com foto e planta, relevante para o comparativo MRV). Cada fonte nova **já extrai fotos** (helper do F1.2). | `scraper/<novo>.py`, `services/search.py`, `frontend/src/data/portais.ts` |
-| F4.6 | Revisar o que descarta anúncio válido: medir `descartados_por_motivo` na busca de referência e ajustar a regra que mais corta sem motivo (refinador RF em amostra pequena, faixa de área, etc.). | `services/validacao.py`, `services/rf_refiner.py` |
+| F4.6 🟡 | Revisar o que descarta anúncio válido: medir `descartados_por_motivo` na busca de referência e ajustar a regra que mais corta sem motivo (refinador RF em amostra pequena, faixa de área, etc.). | `services/validacao.py`, `services/rf_refiner.py` |
 | F4.7 | Relevância/ordenação: ordenar por proximidade do bairro pedido + completude do anúncio (tem foto, área, coordenada) + `rf_score`, em vez da ordem de chegada. | `services/search.py` |
 
 **Pronto quando:** bruto da busca de referência sobe em relação ao `BASELINE.json` do F4.1,
