@@ -1,22 +1,37 @@
 import io
 import logging
-from datetime import datetime
 
 import openpyxl
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from models import Empreendimento
 
 logger = logging.getLogger(__name__)
 
-HEADER_BG = "1A1A2E"
-HEADER_FG = "FFFFFF"
-ROW_ALT_BG = "F9F9F9"
+# ── Paleta oficial MRV (Território de marca, pp. 38-39) ─────────────────────
+# O manual pede o verde como cor principal. Nada fora da paleta: o azul-marinho, o vermelho e o azul-claro
+# que a planilha usava antes não pertencem à marca.
+VERDE_ESCURO = "00683F"   # Pantone 7728 C
+VERDE = "079D56"          # Pantone 7725 C
+AMARELO = "FFB719"        # Pantone 137 C
+ROSA = "F7287C"           # Pantone 213 C (secundária)
+BRANCO = "FFFFFF"
+CINZA_70 = "4D4D4D"       # tons de cinza da paleta neutra
+CINZA_ZEBRA = "F2F2F2"
 
-COR_VERDE = "2E9E5B"
-COR_AMARELO = "E0B010"
-COR_VERMELHO = "E63E3E"
+HEADER_FG = BRANCO
+ROW_ALT_BG = CINZA_ZEBRA
+
+# Preço/m² contra a média. "Acima" usa o rosa da paleta secundária: é a única
+# cor da marca que lê como alerta sem ser confundida com o amarelo da média.
+COR_VERDE = VERDE
+COR_AMARELO = AMARELO
+COR_VERMELHO = ROSA
+# Texto sobre cada faixa: branco some no amarelo (contraste ~1,7:1).
+_TEXTO_SOBRE = {COR_VERDE: BRANCO, COR_AMARELO: VERDE_ESCURO, COR_VERMELHO: BRANCO}
+
+_LINHA = Side(style="thin", color="D9D9D9")
 
 COLUNAS = [
     ("Empreendimento", 32),
@@ -59,17 +74,20 @@ def gerar_excel(empreendimentos: list[Empreendimento], preco_m2_medio: float) ->
     ws.title = "PriceRadar"
 
     # Cabeçalho
-    header_fill = PatternFill(fill_type="solid", fgColor=HEADER_BG)
+    # Verde principal sólido. O manual prefere degradê (45°) como recurso
+    # gráfico, mas o Excel aplica degradê célula a célula e o cabeçalho fica
+    # listrado nas emendas — sólido é o que lê como uma faixa só.
+    header_fill = PatternFill(fill_type="solid", fgColor=VERDE_ESCURO)
     header_font = Font(color=HEADER_FG, bold=True, name="Calibri", size=11)
 
     for col_idx, (nome_col, largura) in enumerate(COLUNAS, start=1):
         cell = ws.cell(row=1, column=col_idx, value=nome_col)
         cell.fill = header_fill
         cell.font = header_font
-        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         ws.column_dimensions[get_column_letter(col_idx)].width = largura
 
-    ws.row_dimensions[1].height = 22
+    ws.row_dimensions[1].height = 28
 
     limite_verde = preco_m2_medio * 0.9
     limite_vermelho = preco_m2_medio * 1.1
@@ -104,8 +122,9 @@ def gerar_excel(empreendimentos: list[Empreendimento], preco_m2_medio: float) ->
             cell = ws.cell(row=row_idx, column=col_idx, value=valor)
             if row_fill:
                 cell.fill = row_fill
-            cell.font = Font(name="Calibri", size=10)
+            cell.font = Font(name="Calibri", size=10, color=CINZA_70)
             cell.alignment = Alignment(vertical="center")
+            cell.border = Border(bottom=_LINHA)
 
         # Formatação condicional para Preço/m² (coluna 8)
         preco_m2_cell = ws.cell(row=row_idx, column=8)
@@ -116,7 +135,7 @@ def gerar_excel(empreendimentos: list[Empreendimento], preco_m2_medio: float) ->
         else:
             cor = COR_AMARELO
         preco_m2_cell.fill = PatternFill(fill_type="solid", fgColor=cor)
-        preco_m2_cell.font = Font(name="Calibri", size=10, color="FFFFFF", bold=True)
+        preco_m2_cell.font = Font(name="Calibri", size=10, color=_TEXTO_SOBRE[cor], bold=True)
 
         # Formatar preço, área e preço/m² como números (colunas 6, 7, 8)
         ws.cell(row=row_idx, column=6).number_format = 'R$ #,##0.00'
@@ -130,14 +149,33 @@ def gerar_excel(empreendimentos: list[Empreendimento], preco_m2_medio: float) ->
     ws.cell(row=total_row, column=7, value=f"=AVERAGE(G2:G{total_row-1})").number_format = '#,##0.00'
     ws.cell(row=total_row, column=8, value=preco_m2_medio).number_format = 'R$ #,##0.00'
 
-    footer_fill = PatternFill(fill_type="solid", fgColor="DDEEFF")
+    footer_fill = PatternFill(fill_type="solid", fgColor=VERDE)
     for col_idx in range(1, len(COLUNAS) + 1):
         cell = ws.cell(row=total_row, column=col_idx)
         cell.fill = footer_fill
-        cell.font = Font(bold=True, name="Calibri", size=10)
+        cell.font = Font(bold=True, name="Calibri", size=10, color=BRANCO)
+    ws.row_dimensions[total_row].height = 20
 
-    # Freeze pane no cabeçalho
+    # Legenda das cores do preço/m² — sem ela, quem recebe a planilha por
+    # e-mail não sabe o que o verde, o amarelo e o rosa querem dizer.
+    legenda_row = total_row + 2
+    ws.cell(row=legenda_row, column=1, value="Legenda do Preço/m²").font = Font(
+        bold=True, name="Calibri", size=10, color=VERDE_ESCURO
+    )
+    faixas = [
+        (COR_VERDE, "Abaixo da média (−10% ou mais)"),
+        (COR_AMARELO, "Na média (±10%)"),
+        (COR_VERMELHO, "Acima da média (+10% ou mais)"),
+    ]
+    for i, (cor, texto) in enumerate(faixas, start=1):
+        amostra = ws.cell(row=legenda_row + i, column=1, value=texto)
+        amostra.fill = PatternFill(fill_type="solid", fgColor=cor)
+        amostra.font = Font(name="Calibri", size=10, bold=True, color=_TEXTO_SOBRE[cor])
+
+    # Cabeçalho fixo e filtro em todas as colunas dos dados.
     ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(COLUNAS))}{total_row - 1}"
+    ws.sheet_properties.tabColor = VERDE_ESCURO
 
     buf = io.BytesIO()
     wb.save(buf)

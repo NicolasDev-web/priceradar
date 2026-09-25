@@ -74,7 +74,7 @@ def test_preco_area_e_preco_m2_seguem_nas_colunas_6_7_e_8():
 def test_preco_m2_continua_recebendo_a_cor():
     """Se as colunas deslizarem, a cor vai para a célula errada."""
     ws = planilha([empreendimento(preco_m2=1_000.0)], media=7_000.0)
-    assert ws.cell(row=2, column=8).fill.fgColor.rgb.endswith("2E9E5B")  # verde
+    assert ws.cell(row=2, column=8).fill.fgColor.rgb.endswith("079D56")  # verde MRV
 
 
 # --------------------------------------------------------------------------
@@ -130,4 +130,34 @@ def test_mistura_de_origens_na_mesma_planilha():
 def test_linha_de_totais_cobre_as_colunas_novas():
     ws = planilha([empreendimento(latitude=-3.7, longitude=-38.5, origem_coordenada="exata")])
     # 1 empreendimento -> totais na linha 3; a faixa colorida vai até a última coluna
-    assert ws.cell(row=3, column=len(COLUNAS)).fill.fgColor.rgb.endswith("DDEEFF")
+    assert ws.cell(row=3, column=len(COLUNAS)).fill.fgColor.rgb.endswith("079D56")  # verde MRV
+
+
+# --------------------------------------------------------------------------
+# Paleta da marca
+# --------------------------------------------------------------------------
+
+def test_so_cores_da_paleta_mrv():
+    """Nenhum preenchimento fora da paleta oficial (Território de marca, pp. 38-39)."""
+    from services import export
+    paleta = {export.VERDE_ESCURO, export.VERDE, export.AMARELO, export.ROSA,
+              export.BRANCO, export.CINZA_ZEBRA}
+    emps = [empreendimento(id=str(i), preco_m2=v) for i, v in enumerate((5_000.0, 7_000.0, 9_000.0))]
+    ws = planilha(emps)
+    usadas = set()
+    for linha in ws.iter_rows():
+        for c in linha:
+            if c.fill is None:
+                continue
+            if c.fill.fill_type == "solid":
+                usadas.add(c.fill.fgColor.rgb[-6:])
+            elif getattr(c.fill, "stop", None):
+                usadas.update(s.color.rgb[-6:] for s in c.fill.stop)
+    assert usadas and usadas <= paleta, usadas - paleta
+
+
+def test_legenda_das_cores_esta_na_planilha():
+    ws = planilha([empreendimento()])
+    textos = [c.value for linha in ws.iter_rows() for c in linha if isinstance(c.value, str)]
+    assert "Legenda do Preço/m²" in textos
+    assert any(t.startswith("Acima da média") for t in textos)
