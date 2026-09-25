@@ -180,6 +180,16 @@ class ExportRequest(BaseModel):
     cidade: str
     preco_m2_medio: float
     empreendimentos: list[Empreendimento]
+    # Contexto da busca, para o cabeçalho e a aba CONFIG da planilha. Tudo
+    # opcional: cliente antigo que não manda continua exportando.
+    preco_m2_mrv: float | None = None
+    preco_min: float | None = None
+    preco_max: float | None = None
+    quartos: int | None = None
+    banheiros: int | None = None
+    bairros: list[str] | None = None
+    tipo_edificacao: str | None = None
+    fontes: list[str] | None = None
 
 
 class LoginRequest(BaseModel):

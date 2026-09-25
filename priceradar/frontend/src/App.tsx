@@ -103,7 +103,7 @@ export default function App() {
     if (!ultimaBusca || !resultado) return
     setExportando(true)
     try {
-      await exportarExcel(ultimaBusca.cidade, resultado)
+      await exportarExcel(ultimaBusca, resultado)
     } catch {
       setErro('Erro ao exportar Excel.')
     } finally {
