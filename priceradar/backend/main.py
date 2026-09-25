@@ -64,6 +64,7 @@ from services.auth import conferir_senha, exigir_login, gerar_token, token_valid
 from services.bairros import listar_bairros
 from services.export import gerar_excel
 from services.search import executar_busca
+from services.imagens import ImagemIndisponivel, obter_imagem, url_permitida
 from services.tiles import TileIndisponivel, coordenada_valida, obter_tile
 
 
@@ -107,6 +108,30 @@ async def login(payload: LoginRequest):
     if not conferir_senha(payload.senha):
         raise HTTPException(status_code=401, detail="Senha incorreta")
     return LoginResponse(token=gerar_token())
+
+
+@app.get("/api/imagem")
+async def imagem_anuncio(
+    u: str = Query(description="URL da foto no CDN do portal"),
+    t: str = Query(default="", description="Token de sessão"),
+):
+    """
+    Foto do anúncio via backend (ver services/imagens.py). O card só chama
+    isto quando a foto direta falha — rede que bloqueia o CDN, ou hotlink.
+    Fora do `router_protegido` pelo mesmo motivo dos tiles: <img> não manda
+    cabeçalho, então o token vem na query (e é mascarado no log).
+    """
+    if not token_valido(t):
+        raise HTTPException(status_code=401, detail="Não autenticado")
+    if not url_permitida(u):
+        raise HTTPException(status_code=400, detail="Endereço de imagem não permitido")
+    try:
+        conteudo, tipo = await obter_imagem(u)
+    except ImagemIndisponivel as e:
+        logger.info(f"Imagem indisponível: {e}")
+        raise HTTPException(status_code=502, detail="Imagem indisponível")
+    return Response(content=conteudo, media_type=tipo,
+                    headers={"Cache-Control": "private, max-age=604800", "X-Content-Type-Options": "nosniff"})
 
 
 @app.get("/api/tiles/{z}/{x}/{y}.png")

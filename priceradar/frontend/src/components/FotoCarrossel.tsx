@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, ImageOff, X } from 'lucide-react'
+import { urlImagemProxy } from '../api/client'
 
 interface Props {
   fotos: string[] | undefined
@@ -34,16 +35,29 @@ const SETA =
   'focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-mrv-green ' +
   '[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/foto:opacity-100'
 
+/**
+ * Cada foto tem duas chances: direto do CDN do portal e, se falhar, pelo
+ * backend (`/api/imagem`). Só depois das duas ela é descartada. A primeira
+ * tentativa é direta porque é a mais rápida e não gasta o backend; o plano B
+ * existe para rede corporativa que bloqueia o CDN e para portal que recusa
+ * hotlink.
+ */
 function useFotosValidas(fotos: string[] | undefined) {
+  const [viaProxy, setViaProxy] = useState<Set<string>>(() => new Set())
   const [quebradas, setQuebradas] = useState<Set<string>>(() => new Set())
   const validas = useMemo(
     () => (fotos ?? []).filter(f => !quebradas.has(f)),
     [fotos, quebradas],
   )
+  const src = useCallback((url: string) => (viaProxy.has(url) ? urlImagemProxy(url) : url), [viaProxy])
   const marcarQuebrada = useCallback((url: string) => {
+    if (!viaProxy.has(url)) {
+      setViaProxy(prev => new Set(prev).add(url))
+      return
+    }
     setQuebradas(prev => (prev.has(url) ? prev : new Set(prev).add(url)))
-  }, [])
-  return { validas, marcarQuebrada }
+  }, [viaProxy])
+  return { validas, marcarQuebrada, src }
 }
 
 /** Arrasto horizontal em toque ou caneta. Mouse usa as setas. */
@@ -116,6 +130,7 @@ function TelaCheia({
   onTrocar,
   onFechar,
   onErro,
+  srcDe,
 }: {
   fotos: string[]
   indice: number
@@ -123,6 +138,8 @@ function TelaCheia({
   onTrocar: (novo: number) => void
   onFechar: () => void
   onErro: (url: string) => void
+  /** Direto do CDN ou via proxy, conforme a foto já falhou ou não. */
+  srcDe: (url: string) => string
 }) {
   const total = fotos.length
   const anterior = useCallback(() => onTrocar((indice - 1 + total) % total), [indice, total, onTrocar])
@@ -162,8 +179,8 @@ function TelaCheia({
       onClick={onFechar}
     >
       <img
-        key={fotos[indice]}
-        src={fotos[indice]}
+        key={srcDe(fotos[indice])}
+        src={srcDe(fotos[indice])}
         alt={`Foto ${indice + 1} de ${total} — ${titulo}`}
         referrerPolicy="no-referrer"
         className="max-w-full max-h-full object-contain select-none touch-pan-y"
@@ -210,7 +227,7 @@ function TelaCheia({
 }
 
 export function FotoCarrossel({ fotos, titulo }: Props) {
-  const { validas, marcarQuebrada } = useFotosValidas(fotos)
+  const { validas, marcarQuebrada, src } = useFotosValidas(fotos)
   const [indice, setIndice] = useState(0)
   const [telaCheia, setTelaCheia] = useState(false)
   const total = validas.length
@@ -264,8 +281,8 @@ export function FotoCarrossel({ fotos, titulo }: Props) {
           tabIndex={-1}
         >
           <img
-            key={validas[atual]}
-            src={validas[atual]}
+            key={src(validas[atual])}
+            src={src(validas[atual])}
             alt={`Foto ${atual + 1} de ${total} — ${titulo}`}
             loading="lazy"
             decoding="async"
@@ -300,6 +317,7 @@ export function FotoCarrossel({ fotos, titulo }: Props) {
           onTrocar={setIndice}
           onFechar={() => setTelaCheia(false)}
           onErro={marcarQuebrada}
+          srcDe={src}
         />
       )}
     </>

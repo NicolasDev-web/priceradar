@@ -53,3 +53,5 @@ Thumbs.db
 .vscode/
 # Cache do proxy de tiles do mapa (services/tiles.py) — regenerável, pode crescer.
 priceradar/backend/data/tiles/
+# Cache do proxy de fotos (services/imagens.py) — regenerável.
+priceradar/backend/data/imagens/
