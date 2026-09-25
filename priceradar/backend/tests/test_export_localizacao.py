@@ -140,7 +140,7 @@ def test_linha_de_totais_cobre_as_colunas_novas():
 def test_so_cores_da_paleta_mrv():
     """Nenhum preenchimento fora da paleta oficial (Território de marca, pp. 38-39)."""
     from services import export
-    paleta = {export.VERDE_ESCURO, export.VERDE, export.AMARELO, export.ROSA,
+    paleta = {export.VERDE_ESCURO, export.VERDE, export.AMARELO, export.LARANJA,
               export.BRANCO, export.CINZA_ZEBRA}
     emps = [empreendimento(id=str(i), preco_m2=v) for i, v in enumerate((5_000.0, 7_000.0, 9_000.0))]
     ws = planilha(emps)
