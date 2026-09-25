@@ -58,6 +58,39 @@ const PORTAL_MAP: Record<string, { label: string; color: string }> = {
   mercadolivre: { label: 'Mercado Livre', color: 'bg-yellow-900/60 text-yellow-300' },
 }
 
+function dataCurta(iso: string): string {
+  const d = new Date(iso)
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** "Novo" ou "▼ 5,0% desde 12/09" — comparação com a última busca igual.
+ *  Símbolo + texto, não só cor. */
+function SeloMudanca({ empreendimento: e }: { empreendimento: Empreendimento }) {
+  if (e.novo) {
+    return (
+      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-900/60 text-sky-200 border border-sky-700/50"
+            title="Não aparecia na última busca igual">
+        Novo
+      </span>
+    )
+  }
+  if (e.preco_anterior && e.data_preco_anterior) {
+    const pct = ((e.preco - e.preco_anterior) / e.preco_anterior) * 100
+    const caiu = pct < 0
+    return (
+      <span
+        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${caiu
+          ? 'bg-emerald-900/50 text-emerald-300 border-emerald-700/40'
+          : 'bg-orange-900/50 text-orange-300 border-orange-700/40'}`}
+        title={`Antes: ${formatarMoeda(e.preco_anterior)} em ${dataCurta(e.data_preco_anterior)}`}
+      >
+        {caiu ? '▼' : '▲'} {Math.abs(pct).toFixed(1).replace('.', ',')}% desde {dataCurta(e.data_preco_anterior)}
+      </span>
+    )
+  }
+  return null
+}
+
 /** Indicador visual do rf_score (0-1): barra + rótulo de confiabilidade */
 function RfScoreIndicator({ score }: { score: number }) {
   const pct = Math.round(score * 100)
@@ -139,6 +172,7 @@ export function ResultCard({ empreendimento: e, precoM2Medio, indice = 0 }: Prop
             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${portalCfg.color}`}>
               {portalCfg.label}
             </span>
+            <SeloMudanca empreendimento={e} />
             {e.construtora && (
               <span className="text-[10px] font-medium text-mrv-text-muted bg-mrv-surface-2/60 px-2 py-0.5 rounded-full">
                 {e.construtora}

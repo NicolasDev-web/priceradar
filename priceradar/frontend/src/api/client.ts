@@ -34,6 +34,13 @@ export function urlTilesMapa(): string {
   return `${BASE_URL}/api/tiles/{z}/{x}/{y}.png?r={r}&t=${token}`
 }
 
+/** A mesma foto via backend — plano B quando o CDN do portal não carrega
+ *  (rede corporativa, hotlink). Token na query pelo mesmo motivo dos tiles. */
+export function urlImagemProxy(url: string): string {
+  const token = encodeURIComponent(getToken() ?? '')
+  return `${BASE_URL}/api/imagem?u=${encodeURIComponent(url)}&t=${token}`
+}
+
 function setToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token)
 }

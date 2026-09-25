@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { AlertTriangle, Clock, Download, RefreshCw } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { buscarConcorrentes, exportarExcel, getToken } from './api/client'
 import { ComparativoBairros } from './components/ComparativoBairros'
 import { EvolucaoChart } from './components/EvolucaoChart'
@@ -12,10 +12,13 @@ import { Login } from './components/Login'
 import { Mapa } from './components/Mapa'
 import { PriceChart } from './components/PriceChart'
 import { ReferencialMRVForm } from './components/ReferencialMRVForm'
+import { OrdenacaoControle } from './components/OrdenacaoControle'
 import { ResultCard } from './components/ResultCard'
+import { ResumoMudancas } from './components/ResumoMudancas'
 import { SearchForm } from './components/SearchForm'
 import { LABEL_PORTAL, PORTAL_CONFIG } from './data/portais'
 import type { BuscaRequest, BuscaResponse, BuscaSalva } from './types'
+import { ordenar, type CriterioOrdem, type Direcao } from './utils/ordenacao'
 
 // Abaixo disso a mediana oscila demais com um anúncio a mais ou a menos.
 // Cidades do interior costumam cair aqui — o aviso evita que um número frágil
@@ -31,6 +34,23 @@ export default function App() {
   // Muda a cada busca bem-sucedida — usado como `key` do grid de resultados
   // para forçar remontagem e replay do stagger de entrada dos cards.
   const [buscaVersion, setBuscaVersion] = useState(0)
+  // Ordem dos cards: lembrada entre sessões (conveniência; sem storage, volta ao padrão).
+  const [criterio, setCriterio] = useState<CriterioOrdem>(() => {
+    try { return (localStorage.getItem('priceradar_ordem') as CriterioOrdem) || 'preco_m2' } catch { return 'preco_m2' }
+  })
+  const [direcao, setDirecao] = useState<Direcao>(() => {
+    try { return (localStorage.getItem('priceradar_direcao') as Direcao) || 'asc' } catch { return 'asc' }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('priceradar_ordem', criterio)
+      localStorage.setItem('priceradar_direcao', direcao)
+    } catch { /* storage indisponível: só não lembra */ }
+  }, [criterio, direcao])
+  const cardsOrdenados = useMemo(
+    () => (resultado ? ordenar(resultado.empreendimentos, criterio, direcao) : []),
+    [resultado, criterio, direcao],
+  )
   const [mostrarHistorico, setMostrarHistorico] = useState(false)
   const [mostrarFormMRV, setMostrarFormMRV] = useState(false)
   const [autenticado, setAutenticado] = useState(() => !!getToken())
@@ -303,6 +323,8 @@ export default function App() {
                   </div>
                 )}
 
+                {resultado.comparacao && <ResumoMudancas comparacao={resultado.comparacao} />}
+
                 {resultado.diagnostico && !resultado.do_cache && (
                   <FunilColeta diagnostico={resultado.diagnostico} exibidos={resultado.total} />
                 )}
@@ -335,7 +357,13 @@ export default function App() {
                   <h2 className="text-[11px] font-bold text-mrv-text-dim uppercase tracking-[0.1em]">
                     {resultado.total} empreendimento{resultado.total !== 1 ? 's' : ''} encontrado{resultado.total !== 1 ? 's' : ''}
                   </h2>
-                  <div className="flex gap-1.5 flex-wrap">
+                  <OrdenacaoControle
+                    criterio={criterio}
+                    direcao={direcao}
+                    onCriterio={setCriterio}
+                    onDirecao={setDirecao}
+                  />
+                  <div className="flex gap-1.5 flex-wrap w-full">
                     {Object.entries(PORTAL_CONFIG).map(([portalKey, cfg]) => {
                       const count = resultado.empreendimentos.filter(e => e.portal === portalKey).length
                       if (!count) return null
@@ -352,7 +380,7 @@ export default function App() {
                 </div>
 
                 <div key={buscaVersion} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
-                  {resultado.empreendimentos.map((emp, i) => (
+                  {cardsOrdenados.map((emp, i) => (
                     <ResultCard
                       key={emp.id}
                       empreendimento={emp}

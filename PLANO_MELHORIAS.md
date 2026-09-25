@@ -81,7 +81,7 @@ Decidido em 23/09/2026.
 | F1.6 ✅ | **Carrossel no card**: área de imagem no topo do `ResultCard` (proporção fixa, 16:10), setas + contador "3/8" + swipe no touch, `loading="lazy"`, `referrerPolicy="no-referrer"`, `onError` pula a foto quebrada. Sem foto → **imagem genérica com selo visível "Foto ilustrativa"** (e `alt`/tooltip dizendo que o anúncio não tem foto), para nunca ser confundida com foto real do imóvel; o card continua. Sem lib nova. | `components/FotoCarrossel.tsx` (novo), `ResultCard.tsx` |
 | F1.7 ✅ | Lightbox ao clicar na foto (tela cheia, setas do teclado, Esc fecha). | `components/FotoCarrossel.tsx` |
 | ~~F1.8~~ | ~~Galeria completa sob demanda~~ — **descartada**: basta mostrar as fotos da listagem. | — |
-| F1.9 | **Só se o hotlink falhar** no F1.1: proxy `GET /api/imagem?u=` com **allowlist de domínios dos portais** (senão é SSRF) e cache em disco. Não fazer se `referrerPolicy="no-referrer"` resolver. | `main.py` |
+| F1.9 ✅ | **Só se o hotlink falhar** no F1.1: proxy `GET /api/imagem?u=` com **allowlist de domínios dos portais** (senão é SSRF) e cache em disco. Não fazer se `referrerPolicy="no-referrer"` resolver. | `main.py` |
 | F1.10 ✅ | Export: coluna "Foto (capa)" com a primeira URL. | `services/export.py` |
 
 ### Decisões tomadas
@@ -166,7 +166,7 @@ começar pela skill `diagnosticar-scraper` — a tabela de volumes daquele docum
 | F4.4 | Busca por bairro nos portais que só o VivaReal faz hoje (Zap, ChavesNaMão) quando o usuário escolhe bairros — o recorte pós-coleta joga fora o que a paginação trouxe de outros bairros. | `scraper/*.py`, `services/search.py` |
 | F4.5 | **Fontes novas** (skill `adicionar-fonte`), avaliar nesta ordem e implementar as viáveis: Wimóveis, 123i, Loft, Imóvel Guide, sites de construtoras concorrentes (Direcional, Cury, Tenda, Pacaembu — lançamentos com foto e planta, relevante para o comparativo MRV). Cada fonte nova **já extrai fotos** (helper do F1.2). | `scraper/<novo>.py`, `services/search.py`, `frontend/src/data/portais.ts` |
 | F4.6 🟡 | Revisar o que descarta anúncio válido: medir `descartados_por_motivo` na busca de referência e ajustar a regra que mais corta sem motivo (refinador RF em amostra pequena, faixa de área, etc.). | `services/validacao.py`, `services/rf_refiner.py` |
-| F4.7 | Relevância/ordenação: ordenar por proximidade do bairro pedido + completude do anúncio (tem foto, área, coordenada) + `rf_score`, em vez da ordem de chegada. | `services/search.py` |
+| F4.7 ✅ | Relevância/ordenação: ordenar por proximidade do bairro pedido + completude do anúncio (tem foto, área, coordenada) + `rf_score`, em vez da ordem de chegada. | `services/search.py` |
 
 **Pronto quando:** bruto da busca de referência sobe em relação ao `BASELINE.json` do F4.1,
 com pelo menos 2 fontes novas funcionando e nenhum portal antigo regredindo.
@@ -180,3 +180,16 @@ com pelo menos 2 fontes novas funcionando e nenhum portal antigo regredindo.
 - Nunca imprimir chaves (`SCRAPERAPI_KEY`, `CARTO_API_KEY`) em log, commit ou resposta.
 - Não aumentar a frequência de requisições aos portais sem ler `.claude/documentacaoantibot.md`.
 - Seguir o estilo do código: comentários em português explicando o **porquê**, como os que já existem.
+
+---
+
+## Fase "sem rede" (26/09/2026) — ✅ feito
+
+| Item | O que ficou |
+| --- | --- |
+| Agente `excel-design-architect` | `.claude/agents/`, com as lições dos protótipos da planilha. |
+| F1.9 Proxy de imagem | `/api/imagem`: foto que falha direto do CDN é pedida ao backend (allowlist, cache, token). |
+| F4.7 Ordenação | Seletor Preço/m² (padrão), Preço total, Área, Mais completos + botão inverter. Lembra a escolha. |
+| Excel média × mediana | Decidido: média (mesma regra dos cards). Sem mudança. |
+| Histórico por anúncio | Casado pela URL com a última busca igual. |
+| Alertas no app | Selo "Novo", selo "▼/▲ x% desde dd/mm", resumo "Desde a última busca igual". |

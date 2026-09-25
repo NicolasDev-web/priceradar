@@ -90,6 +90,32 @@ async def salvar_busca(db: AsyncSession, busca: BuscaRequest, resultado: BuscaRe
     return nova.id
 
 
+def _mesma_busca(q, request: BuscaRequest):
+    """Restringe a consulta às buscas com os mesmos parâmetros que mudam o
+    resultado. Usado pelo cache e pela comparação com a busca anterior.
+    Todos podem ser None — comparação explícita (== None vira IS NULL)."""
+    return q.where(
+        BuscaSalva.cidade == request.cidade,
+        BuscaSalva.preco_min == request.preco_min,
+        BuscaSalva.preco_max == request.preco_max,
+        BuscaSalva.quartos == request.quartos,
+        BuscaSalva.banheiros == request.banheiros,
+        BuscaSalva.bairro == _chave_bairros(request),
+        BuscaSalva.tipo_edificacao == request.tipo_edificacao,
+    )
+
+
+async def buscar_anterior(db: AsyncSession, request: BuscaRequest, pular: int = 0) -> BuscaSalva | None:
+    """
+    A busca igual mais recente já gravada, com os anúncios carregados — base
+    dos selos "Novo" e "preço caiu/subiu". `pular=1` ignora a mais recente
+    (quando ela é o próprio cache que está sendo devolvido).
+    """
+    q = _mesma_busca(select(BuscaSalva), request).where(BuscaSalva.total_encontrado > 0)
+    q = q.order_by(BuscaSalva.criado_em.desc()).offset(pular).limit(1).options(selectinload(BuscaSalva.empreendimentos))
+    return (await db.execute(q)).scalar_one_or_none()
+
+
 async def buscar_cache_recente(
     db: AsyncSession,
     request: BuscaRequest,
@@ -103,29 +129,15 @@ async def buscar_cache_recente(
     banco — evitando refazer o scraping. Retorna None se não houver cache válido.
     """
     limite = datetime.utcnow() - timedelta(minutes=minutos_validade)
-    bairro = _chave_bairros(request)
-
+    # Todo filtro que muda o resultado está em _mesma_busca: `tipo_edificacao`
+    # já faltou aqui, e uma busca "só torre" saía do cache sem filtro nenhum.
     q = (
-        select(BuscaSalva)
-        .where(
-            BuscaSalva.cidade == request.cidade,
-            BuscaSalva.preco_min == request.preco_min,
-            BuscaSalva.preco_max == request.preco_max,
-            BuscaSalva.criado_em >= limite,
-            BuscaSalva.total_encontrado > 0,
-        )
+        _mesma_busca(select(BuscaSalva), request)
+        .where(BuscaSalva.criado_em >= limite, BuscaSalva.total_encontrado > 0)
         .order_by(BuscaSalva.criado_em.desc())
         .options(selectinload(BuscaSalva.empreendimentos))
         .limit(1)
     )
-    # Todos podem ser None — comparação explícita (== None vira IS NULL).
-    # Todo filtro que muda o resultado entra aqui: `tipo_edificacao` faltava, e
-    # uma busca "só torre" logo depois de outra sem filtro saía do cache sem
-    # filtro nenhum.
-    q = q.where(BuscaSalva.quartos == request.quartos)
-    q = q.where(BuscaSalva.banheiros == request.banheiros)
-    q = q.where(BuscaSalva.bairro == bairro)
-    q = q.where(BuscaSalva.tipo_edificacao == request.tipo_edificacao)
 
     result = await db.execute(q)
     busca = result.scalar_one_or_none()
