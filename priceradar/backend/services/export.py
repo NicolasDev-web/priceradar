@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 VERDE_ESCURO = "00683F"   # Pantone 7728 C
 VERDE = "079D56"          # Pantone 7725 C
 AMARELO = "FFB719"        # Pantone 137 C
-ROSA = "F7287C"           # Pantone 213 C (secundária)
+LARANJA = "FF8822"        # Pantone 1575 C
 BRANCO = "FFFFFF"
 CINZA_70 = "4D4D4D"       # tons de cinza da paleta neutra
 CINZA_ZEBRA = "F2F2F2"
@@ -23,13 +23,14 @@ CINZA_ZEBRA = "F2F2F2"
 HEADER_FG = BRANCO
 ROW_ALT_BG = CINZA_ZEBRA
 
-# Preço/m² contra a média. "Acima" usa o rosa da paleta secundária: é a única
-# cor da marca que lê como alerta sem ser confundida com o amarelo da média.
+# Preço/m² contra a média. "Acima" usa o laranja da paleta principal — escolha
+# do negócio (25/09/2026), no lugar do rosa da secundária.
 COR_VERDE = VERDE
 COR_AMARELO = AMARELO
-COR_VERMELHO = ROSA
-# Texto sobre cada faixa: branco some no amarelo (contraste ~1,7:1).
-_TEXTO_SOBRE = {COR_VERDE: BRANCO, COR_AMARELO: VERDE_ESCURO, COR_VERMELHO: BRANCO}
+COR_VERMELHO = LARANJA
+# Texto sobre cada faixa: branco some no amarelo (~1,7:1) e fica fraco no
+# laranja (~2,5:1); o verde-escuro da marca lê bem nos dois.
+_TEXTO_SOBRE = {COR_VERDE: BRANCO, COR_AMARELO: VERDE_ESCURO, COR_VERMELHO: VERDE_ESCURO}
 
 _LINHA = Side(style="thin", color="D9D9D9")
 
