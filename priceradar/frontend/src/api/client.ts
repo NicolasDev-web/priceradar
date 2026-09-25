@@ -136,14 +136,23 @@ export async function consultarProgressoBusca(jobId: string): Promise<ProgressoB
   }
 }
 
-export async function exportarExcel(cidade: string, resultado: BuscaResponse): Promise<void> {
-  // Envia os resultados já buscados — não refaz o scraping (instantâneo).
+export async function exportarExcel(busca: BuscaRequest, resultado: BuscaResponse): Promise<void> {
+  // Envia os resultados já buscados — não refaz o scraping (instantâneo). Os
+  // filtros e o referencial MRV vão junto para o cabeçalho e a aba CONFIG.
   const response = await api.post(
     '/api/exportar',
     {
-      cidade,
+      cidade: busca.cidade,
       preco_m2_medio: resultado.preco_m2_medio,
       empreendimentos: resultado.empreendimentos,
+      preco_m2_mrv: resultado.preco_m2_mrv,
+      preco_min: busca.preco_min,
+      preco_max: busca.preco_max,
+      quartos: busca.quartos,
+      banheiros: busca.banheiros ?? null,
+      bairros: busca.bairros ?? null,
+      tipo_edificacao: busca.tipo_edificacao ?? null,
+      fontes: resultado.diagnostico?.fontes_ok ?? null,
     },
     { responseType: 'blob' },
   )

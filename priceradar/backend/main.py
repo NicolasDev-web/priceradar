@@ -194,7 +194,8 @@ async def exportar(payload: ExportRequest):
     try:
         if not payload.empreendimentos:
             raise HTTPException(status_code=400, detail="Nenhum resultado para exportação")
-        xlsx = gerar_excel(payload.empreendimentos, payload.preco_m2_medio)
+        contexto = payload.model_dump(exclude={"empreendimentos", "preco_m2_medio"})
+        xlsx = gerar_excel(payload.empreendimentos, payload.preco_m2_medio, contexto)
         cidade_slug = payload.cidade.replace(' ', '_').replace(',', '')
         nome = f"priceradar_{cidade_slug}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
         return Response(

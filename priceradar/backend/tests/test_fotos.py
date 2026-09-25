@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from models import Empreendimento  # noqa: E402
 from scraper.parser import MAX_FOTOS, extrair_fotos, fotos_de_card  # noqa: E402
 from services.deduplicador import deduplicar_cross_portal  # noqa: E402
-from services.export import COLUNAS, gerar_excel  # noqa: E402
+from services.export import COL, gerar_excel  # noqa: E402
 
 
 def test_string_unica():
@@ -108,10 +108,10 @@ def test_dedup_une_fotos_dos_portais():
     assert sorted(unico["fotos"]) == ["https://img/a.jpg", "https://img/b.jpg", "https://img/c.jpg"]
 
 
-def test_export_traz_a_capa(tmp_path):
+def test_export_traz_link_da_foto(tmp_path):
     emp = Empreendimento(**_anuncio("vivareal", "https://vr/1", ["https://img/capa.jpg", "https://img/2.jpg"]))
     sem = Empreendimento(**_anuncio("vivareal", "https://vr/2", []))
-    col = [c[0] for c in COLUNAS].index("Foto (capa)") + 1
-    ws = load_workbook(BytesIO(gerar_excel([emp, sem], 6_666.67))).active
-    assert ws.cell(row=2, column=col).value == "https://img/capa.jpg"
-    assert ws.cell(row=3, column=col).value in (None, "")
+    ws = load_workbook(BytesIO(gerar_excel([emp, sem], 6_666.67)))["ANUNCIOS"]
+    celulas = {c.value: c for c in ws[COL["Foto"]][1:]}
+    assert celulas["Ver foto"].hyperlink.target == "https://img/capa.jpg"
+    assert None in celulas or "" in celulas
