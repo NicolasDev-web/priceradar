@@ -23,6 +23,19 @@ cd priceradar\frontend; npm run build
 
 ---
 
+## Atualizar depois de uma mudança publicada
+
+```text
+atualizar-priceradar.bat
+```
+
+Duplo clique. Faz `git pull` na `master`, instala dependências novas, refaz o build do
+frontend, reinicia o backend na porta 8002 (pela Tarefa Agendada, se existir) e confere
+`/api/health`. Para no primeiro erro sem derrubar o backend que está no ar. É o que deixa
+o link oficial (Tailscale) servindo a versão nova.
+
+---
+
 ## Desenvolvimento (dois processos)
 
 Use quando estiver **editando o frontend** e quiser hot reload. São duas janelas.
