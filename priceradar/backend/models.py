@@ -45,6 +45,11 @@ class Empreendimento(BaseModel):
     # primeiro. Lista vazia = o anúncio não trouxe foto (o card mostra uma
     # imagem genérica sinalizada como tal, nunca descarta o anúncio).
     fotos: list[str] = []
+    # Comparação com a última busca igual (derivado, não gravado no banco).
+    # `novo`: não estava lá. `preco_anterior`: estava, com outro preço.
+    novo: bool = False
+    preco_anterior: float | None = None
+    data_preco_anterior: datetime | None = None
 
 
 class ResumoBairro(BaseModel):
@@ -155,6 +160,17 @@ class BuscaRequest(BaseModel):
         return v
 
 
+class ComparacaoBusca(BaseModel):
+    """O que mudou desde a última busca igual. Ausente na primeira vez."""
+    data_anterior: datetime
+    novos: int = 0
+    baixaram: int = 0
+    subiram: int = 0
+    # Só conta anúncio de portal que respondeu desta vez: se o portal falhou,
+    # os anúncios dele não "saíram do ar", só não foram vistos.
+    sairam: int = 0
+
+
 class BuscaResponse(BaseModel):
     total: int
     preco_m2_medio: float
@@ -173,6 +189,7 @@ class BuscaResponse(BaseModel):
     # Anúncios que não puderam ser posicionados no mapa. Sem esse número, um
     # mapa com menos pinos que a lista parece defeito.
     sem_localizacao: int = 0
+    comparacao: ComparacaoBusca | None = None
 
 
 class ExportRequest(BaseModel):

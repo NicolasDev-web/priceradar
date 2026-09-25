@@ -182,7 +182,7 @@ export function SearchForm({ onBuscar, loading }: Props) {
         </div>
 
         {/* Bairros (vários) */}
-        <div className="lg:col-span-2 relative">
+        <div className="lg:col-span-3 relative">
           <label className={labelBase}>
             Bairros{' '}
             <span className="normal-case text-mrv-text-dim font-normal">(opc.)</span>
@@ -247,7 +247,7 @@ export function SearchForm({ onBuscar, loading }: Props) {
         </div>
 
         {/* Preço mínimo */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-3">
           <label className={labelBase}>Preço mínimo</label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-mrv-text-dim text-xs">R$</span>
@@ -261,7 +261,7 @@ export function SearchForm({ onBuscar, loading }: Props) {
         </div>
 
         {/* Preço máximo */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-3">
           <label className={labelBase}>Preço máximo</label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-mrv-text-dim text-xs">R$</span>
@@ -275,7 +275,7 @@ export function SearchForm({ onBuscar, loading }: Props) {
         </div>
 
         {/* Tipologia */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-2">
           <label className={labelBase}>Quartos</label>
           <select value={quartos} onChange={e => setQuartos(e.target.value)} className={inputBase}>
             <option value="">Todos</option>
@@ -288,7 +288,7 @@ export function SearchForm({ onBuscar, loading }: Props) {
 
         {/* Banheiros — mesma semântica de quartos: 4 = 4 ou mais, e anúncio
             que não informa banheiros continua na busca. */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-2">
           <label className={labelBase} title="Anúncios que não informam banheiros continuam aparecendo">
             Banheiros
           </label>
@@ -302,7 +302,7 @@ export function SearchForm({ onBuscar, loading }: Props) {
         </div>
 
         {/* Torre x bloco */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-2">
           <label className={labelBase} title="Torre tem elevador; bloco não">
             Prédio
           </label>

@@ -48,6 +48,7 @@ CACHE_MINUTOS = int(os.getenv("CACHE_MINUTOS", "60"))
 from database.connection import get_db, init_db
 from models import BuscaRequest, BuscaResponse, ExportRequest, LoginRequest, LoginResponse
 from repositories.busca_repo import (
+    buscar_anterior,
     buscar_cache_recente,
     buscar_por_id,
     deletar_busca,
@@ -62,6 +63,7 @@ from repositories.empreendimento_repo import (
 from services import jobs
 from services.auth import conferir_senha, exigir_login, gerar_token, token_valido
 from services.bairros import listar_bairros
+from services.comparacao import comparar_com_anterior
 from services.export import gerar_excel
 from services.search import executar_busca
 from services.imagens import ImagemIndisponivel, obter_imagem, url_permitida
@@ -182,9 +184,13 @@ async def buscar(
             if cache is not None:
                 logger.info(f"Cache HIT: {cache.total} resultados reaproveitados")
                 cache.do_cache = True
+                # A mais recente É o cache; compara com a anterior a ela.
+                comparar_com_anterior(cache, await buscar_anterior(db, request, pular=1))
                 return cache
 
         resultado = await executar_busca(request, preco_m2_mrv, job_id=job_id)
+        # Antes de gravar: senão a "anterior" seria esta mesma busca.
+        comparar_com_anterior(resultado, await buscar_anterior(db, request))
         await salvar_busca(db, request, resultado)
         return resultado
     except Exception as e:

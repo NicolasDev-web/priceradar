@@ -34,6 +34,18 @@ export interface Empreendimento {
   portais_duplicados?: string[]
   /** URLs das fotos da página de resultados, capa primeiro. Vazia = sem foto. */
   fotos?: string[]
+  /** Comparação com a última busca igual (ausente na primeira vez). */
+  novo?: boolean
+  preco_anterior?: number | null
+  data_preco_anterior?: string | null
+}
+
+export interface ComparacaoBusca {
+  data_anterior: string
+  novos: number
+  baixaram: number
+  subiram: number
+  sairam: number
 }
 
 export interface DiagnosticoColeta {
@@ -82,6 +94,7 @@ export interface BuscaResponse {
   diagnostico?: DiagnosticoColeta | null
   por_bairro?: ResumoBairro[]
   sem_localizacao?: number
+  comparacao?: ComparacaoBusca | null
 }
 
 export interface BuscaSalva {
