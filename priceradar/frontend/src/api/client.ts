@@ -2,6 +2,7 @@ import axios from 'axios'
 import type {
   BuscaRequest,
   BuscaResponse,
+  EvolucaoBairrosResponse,
   EvolucaoResponse,
   HistoricoResponse,
   ProgressoBusca,
@@ -189,6 +190,22 @@ export async function deletarHistorico(id: string): Promise<void> {
 export async function buscarEvolucao(cidade: string, quartos?: number): Promise<EvolucaoResponse> {
   const { data } = await api.get<EvolucaoResponse>('/api/historico/evolucao', {
     params: { cidade, quartos },
+  })
+  return data
+}
+
+/**
+ * Evolução do preço/m² por bairro. Sem `bairros`, o backend escolhe os de
+ * maior volume. Vai como texto separado por vírgula (um dos dois formatos que
+ * o endpoint aceita) para não depender de como o axios serializa arrays.
+ */
+export async function buscarEvolucaoBairros(
+  cidade: string,
+  quartos?: number,
+  bairros?: string[],
+): Promise<EvolucaoBairrosResponse> {
+  const { data } = await api.get<EvolucaoBairrosResponse>('/api/historico/evolucao-bairros', {
+    params: { cidade, quartos, bairros: bairros?.length ? bairros.join(',') : undefined },
   })
   return data
 }

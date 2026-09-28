@@ -123,6 +123,34 @@ export interface EvolucaoResponse {
   serie: PontoEvolucao[]
 }
 
+/** Um ponto da evolução por bairro: uma semana ('%Y-W%W') de um bairro. */
+export interface PontoEvolucaoBairro {
+  semana: string
+  preco_m2_medio: number
+  preco_m2_mediana: number
+  /** Anúncios distintos do bairro na semana. */
+  n: number
+  /** n abaixo de `min_amostra`: desenhar sem destaque, nunca como dado firme. */
+  pouco_confiavel: boolean
+}
+
+export interface SerieBairro {
+  bairro: string
+  /** Anúncios distintos no histórico todo (volume). */
+  total: number
+  serie: PontoEvolucaoBairro[]
+}
+
+export interface EvolucaoBairrosResponse {
+  cidade: string
+  quartos: number | null
+  min_amostra: number
+  periodos: string[]
+  /** Todos os bairros com histórico, por volume — para o seletor. */
+  disponiveis: { bairro: string; total: number }[]
+  bairros: SerieBairro[]
+}
+
 export interface ReferencialMRVInput {
   cidade: string
   produto: string
