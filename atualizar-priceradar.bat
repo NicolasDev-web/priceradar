@@ -14,6 +14,15 @@ REM  Para no primeiro erro: um build quebrado nao pode derrubar o
 REM  backend que esta funcionando.
 REM ============================================================
 
+REM O backend roda como administrador (tarefa agendada): sem elevacao
+REM o Stop-Process leva "Acesso negado" e o processo antigo segue no ar.
+net session >nul 2>&1
+if errorlevel 1 (
+    echo Pedindo permissao de administrador para reiniciar o backend...
+    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b 0
+)
+
 cd /d "%~dp0"
 
 echo.
@@ -51,6 +60,14 @@ echo.
 echo [4/5] Reiniciando o backend na porta 8002...
 powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 8002 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }"
 timeout /t 2 /nobreak >nul
+
+REM Se a porta continua ocupada, o /api/health abaixo responderia pelo
+REM processo antigo e daria um falso "atualizado".
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 8002 -State Listen -ErrorAction SilentlyContinue) { exit 1 }"
+if errorlevel 1 (
+    echo [ERRO] O backend antigo continua na porta 8002 - nao consegui encerra-lo.
+    goto :erro
+)
 
 REM Se a tarefa agendada existe, e ela que sobe o backend (oculto, com log).
 REM Senao, abre numa janela propria como o iniciar-priceradar.bat.

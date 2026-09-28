@@ -1,0 +1,80 @@
+{
+  "gerado_em": "2026-09-27T23:08:06",
+  "busca": {
+    "cidade": "Fortaleza, CE",
+    "preco_min": 280000,
+    "preco_max": 500000,
+    "quartos": 2
+  },
+  "aviso_rede": "Só vale medido na rede do PC que serve o link oficial; rede corporativa ou nuvem geram 403 que não existe em produção.",
+  "portais": [
+    {
+      "portal": "quintoandar",
+      "classificacao": "bloqueado",
+      "anuncios": 0,
+      "http_status": 200,
+      "http_bytes": 371429,
+      "primeira_pagina": {
+        "url": "https://www.quintoandar.com.br/comprar/imovel/fortaleza-ce-brasil",
+        "status": 200,
+        "bytes": 371429,
+        "nivel": "httpx",
+        "desafio": true,
+        "marcador_listagem": true,
+        "erro": null,
+        "tentativas": [
+          "httpx:200"
+        ]
+      },
+      "paginacao": {
+        "paginas_lidas": 3,
+        "teto": 3,
+        "parou_no_teto": true,
+        "ultima_pagina_trouxe_novos": false,
+        "novos_ultimo_lote": 0,
+        "anuncios_unicos": 0,
+        "novos_por_pagina": {
+          "1": 0,
+          "2": 0,
+          "3": 0
+        }
+      },
+      "recomendacao_teto": null,
+      "com_foto": 0,
+      "media_fotos": 0,
+      "amostra_foto": null,
+      "foto_abre_sem_referer": null,
+      "tempo_s": 2.8,
+      "erro": null,
+      "veredito": "bloqueado (página de desafio) — não forçar; confirmar na rede do link oficial"
+    },
+    {
+      "portal": "olx",
+      "classificacao": "parser quebrado",
+      "anuncios": 0,
+      "http_status": 200,
+      "http_bytes": 1051366,
+      "primeira_pagina": {
+        "url": "https://www.olx.com.br/imoveis/venda/apartamentos/estado-ce?pe=500000&ps=280000&q=fortaleza",
+        "status": 200,
+        "bytes": 1051366,
+        "nivel": "direto",
+        "desafio": false,
+        "marcador_listagem": true,
+        "erro": null,
+        "tentativas": [
+          "direto:200"
+        ]
+      },
+      "paginacao": null,
+      "recomendacao_teto": null,
+      "com_foto": 0,
+      "media_fotos": 0,
+      "amostra_foto": null,
+      "foto_abre_sem_referer": null,
+      "tempo_s": 2.1,
+      "erro": null,
+      "veredito": "parser quebrado (HTML de 1026KB, 0 anúncios) — consertar extração (diagnosticar-scraper)"
+    }
+  ]
+}

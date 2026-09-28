@@ -1,0 +1,54 @@
+{
+  "gerado_em": "2026-09-27T23:13:55",
+  "busca": {
+    "cidade": "Fortaleza, CE",
+    "preco_min": 280000,
+    "preco_max": 500000,
+    "quartos": 2
+  },
+  "aviso_rede": "Só vale medido na rede do PC que serve o link oficial; rede corporativa ou nuvem geram 403 que não existe em produção.",
+  "portais": [
+    {
+      "portal": "olx",
+      "classificacao": "ok",
+      "anuncios": 249,
+      "http_status": 200,
+      "http_bytes": 1051366,
+      "primeira_pagina": {
+        "url": "https://www.olx.com.br/imoveis/venda/apartamentos/estado-ce?pe=500000&ps=280000&q=fortaleza",
+        "status": 200,
+        "bytes": 1051366,
+        "nivel": "direto",
+        "desafio": false,
+        "marcador_listagem": true,
+        "erro": null,
+        "tentativas": [
+          "direto:200"
+        ]
+      },
+      "paginacao": {
+        "paginas_lidas": 5,
+        "teto": 5,
+        "parou_no_teto": true,
+        "ultima_pagina_trouxe_novos": true,
+        "novos_ultimo_lote": 100,
+        "anuncios_unicos": 249,
+        "novos_por_pagina": {
+          "1": 50,
+          "2": 49,
+          "3": 50,
+          "4": 50,
+          "5": 50
+        }
+      },
+      "recomendacao_teto": "subir teto",
+      "com_foto": 249,
+      "media_fotos": 9.7,
+      "amostra_foto": "https://img.olx.com.br/images/80/809637929990958.jpg",
+      "foto_abre_sem_referer": "ok",
+      "tempo_s": 3.5,
+      "erro": null,
+      "veredito": "subir teto (leu 5/5 e a última ainda trouxe novos)"
+    }
+  ]
+}

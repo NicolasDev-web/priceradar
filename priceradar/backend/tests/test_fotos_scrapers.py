@@ -90,3 +90,31 @@ def test_olx_le_foto_do_card():
     </li></ul>"""
     [anuncio] = olximoveis.parse_olx_html(html, "fortaleza")
     assert anuncio["fotos"] == ["https://img.olx.com.br/images/1.jpg"]
+
+
+def test_olx_le_anuncio_do_payload_rsc_atual():
+    ad = {
+        "subject": "Apartamento 2 quartos no Cocó",
+        "priceValue": "R$ 420.000",
+        "listId": 123,
+        "url": "https://ce.olx.com.br/fortaleza-e-regiao/imoveis/apartamento-123",
+        "location": "Fortaleza, Cocó - DDD 85",
+        "images": [{"original": "https://img.olx.com.br/images/1.jpg"}],
+        "properties": [
+            {"name": "size", "value": "60m²"},
+            {"name": "rooms", "value": "2"},
+            {"name": "bathrooms", "value": "2"},
+            {"name": "garage_spaces", "value": "1"},
+        ],
+    }
+    payload = f'0:{{"children":{{"ads":{json.dumps([ad], ensure_ascii=False)}}}}}'
+    html = f'<script>self.__next_f.push({json.dumps([1, payload], ensure_ascii=False)})</script>'
+
+    [anuncio] = olximoveis.parse_olx_html(html, "fortaleza")
+
+    assert anuncio["preco"] == 420_000
+    assert anuncio["area_m2"] == 60
+    assert anuncio["preco_m2"] == 7_000
+    assert anuncio["quartos"] == 2
+    assert anuncio["bairro"] == "Cocó"
+    assert anuncio["fotos"] == ["https://img.olx.com.br/images/1.jpg"]
