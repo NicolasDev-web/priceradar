@@ -12,7 +12,10 @@ from scraper.olximoveis import build_olx_url
 
 
 async def main() -> None:
+    # Município no path (o que a coleta usa). Para ver a busca antiga por texto
+    # no estado, passe por_cidade=False.
     url = build_olx_url("fortaleza", "ce", 280_000, 500_000)
+    print("url", url)
     html = await buscar_html(url, "OLX-DIAG") or ""
     scripts = re.findall(r"self\.__next_f\.push\((\[.*?\])\)</script>", html, re.DOTALL)
     chunks: list[str] = []
@@ -50,7 +53,7 @@ async def main() -> None:
         print("chaves_primeiro", sorted(primeiro))
         print("primeiro_resumo", {
             chave: primeiro.get(chave)
-            for chave in ("subject", "priceValue", "listId", "url", "location", "properties")
+            for chave in ("subject", "priceValue", "listId", "url", "location", "locationDetails", "properties")
         })
     for termo in ("listId", "subject", "location", "pagination", "pageIndex", "nextPage"):
         indice = texto.find(termo)

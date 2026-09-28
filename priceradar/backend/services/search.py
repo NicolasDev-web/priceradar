@@ -30,12 +30,13 @@ logger = logging.getLogger(__name__)
 MOCK_MODE = os.getenv("MOCK", "false").lower() == "true"
 
 # Fontes desligadas por padrão, com o motivo medido em 29/07/2026:
-#   olx          — bloqueia requisição de servidor (403)
 #   mercadolivre — a página só renderiza com JS e o Playwright devolve 0
 #   quintoandar  — listagem 100% client-side, sem dados no HTML inicial
 #   netimoveis   — portal concentrado em MG; sem inventário fora de lá
 # Ligar exige medir antes com a skill `diagnosticar-scraper`.
-OLX_HABILITADO = os.getenv("HABILITAR_OLX", "false").lower() == "true"
+# OLX: ligada desde 27/09/2026 — responde 200 na rede do PC oficial e o payload
+# RSC traz ~50 anúncios por página (249 em 5 páginas, Fortaleza).
+OLX_HABILITADO = os.getenv("HABILITAR_OLX", "true").lower() == "true"
 MERCADOLIVRE_HABILITADO = os.getenv("HABILITAR_MERCADOLIVRE", "false").lower() == "true"
 QUINTOANDAR_HABILITADO = os.getenv("HABILITAR_QUINTOANDAR", "false").lower() == "true"
 NETIMOVEIS_HABILITADO = os.getenv("HABILITAR_NETIMOVEIS", "false").lower() == "true"
@@ -220,8 +221,10 @@ async def _executar_busca_interna(
                 ("quintoandar", scrape_quintoandar(request.cidade, request.preco_min, request.preco_max, request.quartos, bairro))
             )
         if OLX_HABILITADO:
-            tarefas_candidatas.append(
-                ("olx", scrape_olximoveis(cidade, estado, request.preco_min, request.preco_max, request.quartos))
+            # Como o VivaReal: o bairro entra no path da OLX, um por URL.
+            tarefas_candidatas.extend(
+                ("olx", scrape_olximoveis(cidade, estado, request.preco_min, request.preco_max, request.quartos, b))
+                for b in (bairros_pedidos or [None])
             )
 
         # Reordena por prioridade histórica antes de disparar. A ordenação é
@@ -300,7 +303,7 @@ async def _executar_busca_interna(
             descartes['outro_tipo_edificacao'] = descartes.get('outro_tipo_edificacao', 0) + removidos
             logger.info(f"Filtro tipo_edificacao={tipo_filtro}: {antes} → {len(raw_todos)}")
 
-    # Filtro por bairro. Só o VivaReal filtra na origem; o que vem dos demais
+    # Filtro por bairro. Só VivaReal e OLX filtram na origem; o que vem dos demais
     # portais é recortado aqui, contra o campo `bairro` já corrigido.
     bairros_filtro = request.lista_bairros
     if bairros_filtro:

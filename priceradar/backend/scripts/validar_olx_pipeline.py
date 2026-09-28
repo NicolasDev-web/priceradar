@@ -8,6 +8,7 @@ from collections import Counter
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from models import BuscaRequest
+from scraper import olximoveis
 from scraper.olximoveis import scrape_olximoveis
 from services.rf_refiner import refinar_com_random_forest
 from services.validacao import filtrar_anuncios
@@ -26,7 +27,11 @@ async def main() -> None:
     refinados = refinar_com_random_forest(validos, descartes=descartes_rf)
     precos = [item["preco_m2"] for item in refinados]
     bairros = Counter(item.get("bairro") or "Sem bairro" for item in refinados)
+    com_bairro = sum(1 for item in brutos if item.get("bairro"))
     print({
+        # modo: bairro/cidade = município no path; estado = busca por texto (fallback)
+        "coleta": olximoveis.ULTIMA_COLETA,
+        "pct_com_bairro": round(100 * com_bairro / len(brutos), 1) if brutos else None,
         "brutos": len(brutos),
         "apos_validacao": len(validos),
         "apos_refino": len(refinados),
