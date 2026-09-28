@@ -47,7 +47,17 @@ function formatarMoeda(v: number): string {
 function formatarSemana(semana: string): string {
   const m = semana.match(/(\d{4})-W(\d+)/)
   if (!m) return semana
-  return `S${m[2]}/${m[1].slice(2)}`
+  return `sem. ${m[2]}/${m[1].slice(2)}`
+}
+
+function descreverSemana(semana: string): string {
+  const m = semana.match(/(\d{4})-W(\d+)/)
+  if (!m) return semana
+  return `Semana ${Number(m[2])} de ${m[1]}`
+}
+
+function pluralAnuncios(total: number): string {
+  return `${total} ${total === 1 ? 'anúncio' : 'anúncios'}`
 }
 
 type Linha = Record<string, string | number | boolean | null>
@@ -63,19 +73,23 @@ function TooltipBairros({ active, payload, series }: PropsTooltip) {
   const linha = payload[0].payload
   return (
     <div className="rounded-panel border border-mrv-border bg-mrv-surface-2 px-3 py-2 text-[11px] text-mrv-text shadow-card">
-      <div className="mb-1 text-mrv-text-muted">Semana {String(linha.semana_fmt)}</div>
+      <div className="mb-1.5 text-mrv-text-muted">{String(linha.semana_descricao)}</div>
       {series.map((s, i) => {
         const valor = linha[`t${i}`]
         if (typeof valor !== 'number') return null
         const fraco = linha[`fraco${i}`] === true
+        const total = Number(linha[`n${i}`])
         return (
-          <div key={s.bairro} className="flex items-center gap-2 py-0.5">
-            <span className="inline-block h-2 w-2 rounded-full" style={{ background: s.cor }} />
-            <span className="min-w-0 flex-1 truncate">{s.bairro}</span>
-            <span className="font-data">{formatarMoeda(valor)}</span>
-            <span className={fraco ? 'text-amber-300/90' : 'text-mrv-text-muted'}>
-              n={String(linha[`n${i}`])}{fraco ? ' · amostra fraca' : ''}
-            </span>
+          <div key={s.bairro} className="border-t border-mrv-border/60 py-1.5 first:border-0 first:pt-0">
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ background: s.cor }} />
+              <span className="min-w-0 flex-1 truncate font-medium">{s.bairro}</span>
+              <span className="font-data">{formatarMoeda(valor)}/m²</span>
+            </div>
+            <div className={`pl-4 text-[10px] ${fraco ? 'text-amber-300/90' : 'text-mrv-text-muted'}`}>
+              {pluralAnuncios(total)} usado{total === 1 ? '' : 's'} neste ponto
+              {fraco ? ' · poucos anúncios, o valor pode oscilar mais' : ''}
+            </div>
           </div>
         )
       })}
@@ -140,7 +154,11 @@ export function EvolucaoBairrosChart({ cidade, quartos, bairros }: Props) {
   const chartData = useMemo(() => {
     if (!dados) return []
     return dados.periodos.map(semana => {
-      const linha: Linha = { semana, semana_fmt: formatarSemana(semana) }
+      const linha: Linha = {
+        semana,
+        semana_fmt: formatarSemana(semana),
+        semana_descricao: descreverSemana(semana),
+      }
       series.forEach((s, i) => {
         const p: PontoEvolucaoBairro | undefined = s.serie.find(x => x.semana === semana)
         // t = todos os pontos (linha tracejada); f = só os firmes (linha cheia).
@@ -181,10 +199,16 @@ export function EvolucaoBairrosChart({ cidade, quartos, bairros }: Props) {
   }
 
   const titulo = (
-    <h2 className="text-[11px] font-bold text-mrv-text-dim uppercase tracking-[0.1em] mb-3">
-      Evolução Preço/m² por bairro — {cidade}
-      {quartos ? ` · ${quartos} qtos` : ''}
-    </h2>
+    <div className="mb-4">
+      <h2 className="text-sm font-semibold text-mrv-text">
+        Preço por m² ao longo do tempo — bairros de {cidade}
+        {quartos ? ` · ${quartos} quartos` : ''}
+      </h2>
+      <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-mrv-text-muted">
+        Compare os bairros semana a semana. Linha subindo significa anúncios mais caros por m²;
+        linha descendo, anúncios mais baratos.
+      </p>
+    </div>
   )
 
   if (dados.periodos.length < 2) {
@@ -220,7 +244,7 @@ export function EvolucaoBairrosChart({ cidade, quartos, bairros }: Props) {
               onClick={() => alternar(o.bairro)}
               disabled={bloqueado}
               aria-pressed={ativo}
-              title={bloqueado ? `No máximo ${MAX_LINHAS} bairros por vez` : `${o.total} anúncios no histórico`}
+              title={bloqueado ? `No máximo ${MAX_LINHAS} bairros por vez` : `${pluralAnuncios(o.total)} encontrados no histórico`}
               className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[11px] transition-colors ${
                 ativo
                   ? 'border-mrv-border-bright bg-mrv-surface-2 text-mrv-text'
@@ -232,7 +256,7 @@ export function EvolucaoBairrosChart({ cidade, quartos, bairros }: Props) {
                 style={{ background: serie ? serie.cor : 'transparent', border: serie ? 'none' : `1px solid ${COR_EIXO}` }}
               />
               {o.bairro}
-              <span className="text-mrv-text-dim">{o.total}</span>
+              <span className="text-mrv-text-dim">· {pluralAnuncios(o.total)}</span>
             </button>
           )
         })}
@@ -303,11 +327,11 @@ export function EvolucaoBairrosChart({ cidade, quartos, bairros }: Props) {
         </LineChart>
       </ResponsiveContainer>
 
-      <p className="mt-2 text-[10px] text-mrv-text-dim leading-relaxed">
-        Média do preço/m² por semana, cada anúncio contado uma vez. Linha cheia: {dados.min_amostra}+
-        anúncios na semana. Tracejado e marcador vazado: amostra fraca (menos de {dados.min_amostra}),
-        não é tendência.
-        {semHistorico.length > 0 && ` Sem histórico: ${semHistorico.join(', ')}.`}
+      <p className="mt-2 max-w-4xl text-[10px] text-mrv-text-dim leading-relaxed">
+        Cada ponto usa o preço médio por m² dos anúncios encontrados naquela semana. Quando há menos
+        de {` ${dados.min_amostra} anúncios`}, o trecho fica pontilhado para avisar que o valor pode
+        mudar bastante com a entrada de novos imóveis.
+        {semHistorico.length > 0 && ` Ainda sem dados: ${semHistorico.join(', ')}.`}
       </p>
     </div>
   )

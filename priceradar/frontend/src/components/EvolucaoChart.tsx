@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ReferenceLine,
@@ -25,7 +24,38 @@ function formatarMoeda(v: number): string {
 function formatarSemana(semana: string): string {
   const m = semana.match(/(\d{4})-W(\d+)/)
   if (!m) return semana
-  return `S${m[2]}/${m[1].slice(2)}`
+  return `sem. ${m[2]}/${m[1].slice(2)}`
+}
+
+function descreverSemana(semana: string): string {
+  const m = semana.match(/(\d{4})-W(\d+)/)
+  if (!m) return semana
+  return `Semana ${Number(m[2])} de ${m[1]}`
+}
+
+function pluralAnuncios(total: number): string {
+  return `${total} ${total === 1 ? 'anúncio' : 'anúncios'}`
+}
+
+type PontoGrafico = PontoEvolucao & { semana_fmt: string; semana_descricao: string }
+
+interface PropsTooltip {
+  active?: boolean
+  payload?: { payload: PontoGrafico }[]
+}
+
+function TooltipCidade({ active, payload }: PropsTooltip) {
+  if (!active || !payload?.length) return null
+  const ponto = payload[0].payload
+  return (
+    <div className="rounded-panel border border-mrv-border bg-mrv-surface-2 px-3 py-2 text-[11px] text-mrv-text shadow-card">
+      <div className="mb-1 text-mrv-text-muted">{ponto.semana_descricao}</div>
+      <div className="font-data font-semibold">{formatarMoeda(ponto.preco_m2_medio)}/m²</div>
+      <div className="mt-0.5 text-[10px] text-mrv-text-muted">
+        Média calculada com {pluralAnuncios(ponto.total)} encontrados nessa semana
+      </div>
+    </div>
+  )
 }
 
 export function EvolucaoChart({ cidade, quartos }: Props) {
@@ -61,14 +91,21 @@ export function EvolucaoChart({ cidade, quartos }: Props) {
   const chartData = serie.map(p => ({
     ...p,
     semana_fmt: formatarSemana(p.semana),
+    semana_descricao: descreverSemana(p.semana),
   }))
 
   return (
     <div className="bg-mrv-surface border border-mrv-border rounded-panel p-6 mb-5">
-      <h2 className="text-[11px] font-bold text-mrv-text-dim uppercase tracking-[0.1em] mb-5">
-        Evolução Preço/m² — {cidade}
-        {quartos ? ` · ${quartos} qtos` : ''}
-      </h2>
+      <div className="mb-5">
+        <h2 className="text-sm font-semibold text-mrv-text">
+          Preço por m² ao longo do tempo — visão geral de {cidade}
+          {quartos ? ` · ${quartos} quartos` : ''}
+        </h2>
+        <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-mrv-text-muted">
+          Reúne todos os anúncios encontrados para mostrar se o preço anunciado da cidade está
+          subindo, caindo ou permanecendo estável a cada semana.
+        </p>
+      </div>
       <ResponsiveContainer width="100%" height={200}>
         <LineChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1A4A35" />
@@ -86,18 +123,7 @@ export function EvolucaoChart({ cidade, quartos }: Props) {
             tickLine={false}
           />
           <Tooltip
-            formatter={(value: number) => [formatarMoeda(value), 'Preço/m² médio']}
-            labelFormatter={(label) => `Semana: ${label}`}
-            contentStyle={{
-              background: '#112D22',
-              border: '1px solid #1A4A35',
-              borderRadius: '8px',
-              fontSize: '11px',
-              color: '#E8F0EC',
-            }}
-          />
-          <Legend
-            wrapperStyle={{ fontSize: 10, color: '#7BA898' }}
+            content={<TooltipCidade />}
           />
           {precoMrv && (
             <ReferenceLine
@@ -105,13 +131,13 @@ export function EvolucaoChart({ cidade, quartos }: Props) {
               stroke="#F39200"
               strokeDasharray="6 3"
               strokeWidth={1.5}
-              label={{ value: 'Ref. MRV', position: 'insideTopRight', fontSize: 9, fill: '#F39200' }}
+              label={{ value: 'Referência MRV', position: 'insideTopRight', fontSize: 9, fill: '#F39200' }}
             />
           )}
           <Line
             type="monotone"
             dataKey="preco_m2_medio"
-            name="Mercado"
+            name="Todos os anúncios da cidade"
             stroke="#0B5A42"
             strokeWidth={2}
             dot={{ fill: '#0D6B4F', r: 3, strokeWidth: 0 }}
