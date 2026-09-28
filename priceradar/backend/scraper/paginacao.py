@@ -30,6 +30,14 @@ logger = logging.getLogger(__name__)
 
 TAMANHO_LOTE = max(1, int(os.getenv("MAX_SIMULTANEAS_POR_HOST", "3")))
 
+# Estatísticas da última paginação de cada portal (chave = o `portal` passado a
+# `paginar`). Existe para o `scripts/diagnosticar_fotos.py` (F5.2) responder
+# "parou no teto com a última página ainda trazendo anúncio novo?" — que é a
+# condição para subir o teto — sem repetir a lógica nem mudar o comportamento
+# da paginação: aqui só se ANOTA o que o laço já sabia. Guarda só números; em
+# produção cada busca sobrescreve a entrada do seu portal.
+ESTATISTICAS: dict[str, dict] = {}
+
 
 def _chave(item: dict) -> str | None:
     url = (item.get("url_anuncio") or "").split("?")[0].split("#")[0].rstrip("/")
@@ -52,6 +60,8 @@ async def paginar(
     vistos: set[str] = set()
     resultados: list[dict] = []
     ultima = 0
+    novos_por_pagina: dict[int, int] = {}
+    novos_ultimo_lote = 0
 
     for inicio in range(1, max_paginas + 1, tamanho_lote):
         paginas = list(range(inicio, min(inicio + tamanho_lote, max_paginas + 1)))
@@ -60,6 +70,7 @@ async def paginar(
 
         novos = 0
         for p, itens in zip(paginas, lote):
+            novos_por_pagina[p] = 0
             if isinstance(itens, BaseException):
                 logger.warning(f"{portal} p{p}: {type(itens).__name__}: {itens}")
                 continue
@@ -68,10 +79,13 @@ async def paginar(
                 if chave is None:
                     resultados.append(item)
                     novos += 1
+                    novos_por_pagina[p] += 1
                 elif chave not in vistos:
                     vistos.add(chave)
                     resultados.append(item)
                     novos += 1
+                    novos_por_pagina[p] += 1
+        novos_ultimo_lote = novos
 
         if novos == 0:
             if ultima < max_paginas:
@@ -80,4 +94,15 @@ async def paginar(
             break
 
     logger.info(f"{portal}: {len(resultados)} anúncios únicos em {ultima} páginas (teto {max_paginas})")
+    ESTATISTICAS[portal] = {
+        "paginas_lidas": ultima,
+        "teto": max_paginas,
+        "parou_no_teto": ultima >= max_paginas,
+        # A pergunta da F5: a ÚLTIMA página lida ainda trouxe anúncio novo?
+        # Se sim e parou no teto, o inventário provavelmente continua depois.
+        "ultima_pagina_trouxe_novos": novos_por_pagina.get(ultima, 0) > 0,
+        "novos_ultimo_lote": novos_ultimo_lote,
+        "novos_por_pagina": dict(sorted(novos_por_pagina.items())),
+        "anuncios_unicos": len(resultados),
+    }
     return resultados

@@ -215,3 +215,36 @@ class LoginRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     token: str
+
+
+# ── Evolução por bairro (GET /api/historico/evolucao-bairros) ─────────────────
+
+class PontoEvolucaoBairro(BaseModel):
+    semana: str                 # '%Y-W%W', o mesmo texto da evolução por cidade
+    preco_m2_medio: float
+    preco_m2_mediana: float
+    n: int                      # anúncios distintos do bairro naquela semana
+    # n < min_amostra: o gráfico desenha o ponto sem destaque/tracejado, nunca
+    # como dado firme — média de 1 ou 2 anúncios não é tendência de bairro.
+    pouco_confiavel: bool
+
+
+class SerieBairro(BaseModel):
+    bairro: str                 # grafia mais frequente (com acento)
+    total: int                  # anúncios distintos no histórico todo (volume)
+    serie: list[PontoEvolucaoBairro]
+
+
+class BairroDisponivel(BaseModel):
+    bairro: str
+    total: int
+
+
+class EvolucaoBairrosResponse(BaseModel):
+    cidade: str
+    quartos: int | None = None
+    min_amostra: int
+    periodos: list[str]
+    # Todos os bairros com histórico, por volume — alimenta o seletor da tela.
+    disponiveis: list[BairroDisponivel]
+    bairros: list[SerieBairro]

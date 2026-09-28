@@ -46,7 +46,14 @@ logging.getLogger("uvicorn.access").addFilter(_OcultarTokenNoLog())
 CACHE_MINUTOS = int(os.getenv("CACHE_MINUTOS", "60"))
 
 from database.connection import get_db, init_db
-from models import BuscaRequest, BuscaResponse, ExportRequest, LoginRequest, LoginResponse
+from models import (
+    BuscaRequest,
+    BuscaResponse,
+    EvolucaoBairrosResponse,
+    ExportRequest,
+    LoginRequest,
+    LoginResponse,
+)
 from repositories.busca_repo import (
     buscar_anterior,
     buscar_cache_recente,
@@ -57,6 +64,7 @@ from repositories.busca_repo import (
 )
 from repositories.empreendimento_repo import (
     get_referencial_mrv,
+    observacoes_por_periodo,
     preco_m2_historico,
     upsert_referencial_mrv,
 )
@@ -64,6 +72,7 @@ from services import jobs
 from services.auth import conferir_senha, exigir_login, gerar_token, token_valido
 from services.bairros import listar_bairros
 from services.comparacao import comparar_com_anterior
+from services.evolucao import ler_lista_bairros, serie_por_bairro
 from services.export import gerar_excel
 from services.search import executar_busca
 from services.imagens import ImagemIndisponivel, obter_imagem, url_permitida
@@ -273,6 +282,25 @@ async def listar_historico(cidade: str | None = None, db: AsyncSession = Depends
 async def evolucao_preco(cidade: str, quartos: int | None = None, db: AsyncSession = Depends(get_db)):
     dados = await preco_m2_historico(db, cidade, quartos)
     return {"cidade": cidade, "serie": dados}
+
+
+@router_protegido.get("/api/historico/evolucao-bairros", response_model=EvolucaoBairrosResponse)
+async def evolucao_bairros(
+    cidade: str,
+    quartos: int | None = None,
+    bairros: list[str] | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Preço/m² por bairro e semana, a partir do histórico gravado.
+
+    `bairros`: nomes separados por vírgula (`bairros=Aldeota,Meireles`) ou o
+    parâmetro repetido (`bairros=Aldeota&bairros=Meireles`); comparação sem
+    acento/caixa. Ausente → os bairros de maior volume. Declarada antes de
+    `/api/historico/{busca_id}` para não ser engolida por ela.
+    """
+    observacoes = await observacoes_por_periodo(db, cidade, quartos)
+    return {"cidade": cidade, "quartos": quartos, **serie_por_bairro(observacoes, ler_lista_bairros(bairros))}
 
 
 @router_protegido.get("/api/historico/{busca_id}")

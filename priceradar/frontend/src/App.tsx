@@ -3,6 +3,7 @@ import { AlertTriangle, Clock, Download, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buscarConcorrentes, exportarExcel, getToken } from './api/client'
 import { ComparativoBairros } from './components/ComparativoBairros'
+import { EvolucaoBairrosChart } from './components/EvolucaoBairrosChart'
 import { EvolucaoChart } from './components/EvolucaoChart'
 import { FunilColeta } from './components/FunilColeta'
 import { HistoricoPanel } from './components/HistoricoPanel'
@@ -348,6 +349,16 @@ export default function App() {
                 {/* Gráfico de evolução histórica */}
                 {ultimaBusca && (
                   <EvolucaoChart cidade={ultimaBusca.cidade} quartos={ultimaBusca.quartos} />
+                )}
+
+                {/* Mesma evolução aberta por bairro. Padrão: os bairros da busca;
+                    busca sem bairro → os de maior volume no histórico. */}
+                {ultimaBusca && (
+                  <EvolucaoBairrosChart
+                    cidade={ultimaBusca.cidade}
+                    quartos={ultimaBusca.quartos}
+                    bairros={ultimaBusca.bairros ?? (ultimaBusca.bairro ? [ultimaBusca.bairro] : null)}
+                  />
                 )}
 
                 <PriceChart dados={resultado} />

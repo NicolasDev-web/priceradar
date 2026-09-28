@@ -21,6 +21,9 @@ import asyncio
 import logging
 import os
 import random
+import re
+import time
+from collections.abc import Callable
 from urllib.parse import urlencode, urlparse
 
 import httpx
@@ -74,6 +77,44 @@ async def _aguardar_jitter() -> None:
     await asyncio.sleep(random.uniform(_JITTER_MIN, _JITTER_MAX))
 
 
+# ── Observadores (F5.2 — diagnóstico por portal) ────────────────────────────
+# O script `scripts/diagnosticar_fotos.py` precisa saber o status HTTP e o
+# tamanho da resposta que o scraper REALMENTE recebeu — sem disparar uma
+# requisição extra só para medir (requisição a mais é o que os portais pontuam
+# como robô). Por isso cada tentativa de nível 1 e 2 avisa quem estiver
+# ouvindo. Em produção a lista fica vazia e isto não custa nada.
+#
+# Mudança aditiva: nenhum retorno, nenhum log e nenhuma ordem do fallback
+# (curl-cffi → ScraperAPI → Playwright) mudou. O evento leva a URL do PORTAL,
+# nunca a URL da ScraperAPI — aquela carrega a chave na query string.
+_observadores: list[Callable[[dict], None]] = []
+
+
+def adicionar_observador(fn: Callable[[dict], None]) -> None:
+    """Registra `fn(evento)` para cada tentativa de requisição (ver `_notificar`)."""
+    _observadores.append(fn)
+
+
+def remover_observador(fn: Callable[[dict], None]) -> None:
+    if fn in _observadores:
+        _observadores.remove(fn)
+
+
+def _notificar(**evento) -> None:
+    """
+    Evento: portal, url, nivel ('direto'|'scraperapi'), status (None se não
+    houve resposta), bytes, corpo (texto, para o diagnóstico procurar página
+    de desafio — não é para gravar), erro, inicio/fim (perf_counter).
+
+    Observador com defeito nunca pode derrubar a busca: o erro é engolido.
+    """
+    for fn in list(_observadores):
+        try:
+            fn(dict(evento))
+        except Exception as e:  # noqa: BLE001 — diagnóstico não quebra coleta
+            logger.debug(f"observador de http falhou: {type(e).__name__}: {e}")
+
+
 _sessoes: dict[str, object] = {}
 
 
@@ -104,6 +145,9 @@ async def buscar_html_direto(target_url: str, portal: str) -> str | None:
         return None
 
     sessao = _sessao_do_host(target_url, cr)
+    # Marcado na entrada (antes do semáforo) para o diagnóstico saber a ordem
+    # em que as páginas foram PEDIDAS — a p1 é a primeira a entrar aqui.
+    inicio = time.perf_counter()
 
     def _get() -> tuple[int, str]:
         # Session reaproveita cookies entre páginas do mesmo portal: o desafio
@@ -122,7 +166,16 @@ async def buscar_html_direto(target_url: str, portal: str) -> str | None:
             status, html = await asyncio.to_thread(_get)
     except Exception as e:
         logger.info(f"{portal}: fetch direto falhou ({type(e).__name__}: {str(e)[:80]})")
+        if _observadores:
+            _notificar(portal=portal, url=target_url, nivel="direto", status=None, bytes=0,
+                       corpo="", erro=f"{type(e).__name__}: {str(e)[:120]}",
+                       inicio=inicio, fim=time.perf_counter())
         return None
+
+    if _observadores:
+        _notificar(portal=portal, url=target_url, nivel="direto", status=status,
+                   bytes=len(html.encode("utf-8", errors="replace")) if html else 0,
+                   corpo=html or "", erro=None, inicio=inicio, fim=time.perf_counter())
 
     if status == 200 and html:
         logger.info(f"{portal}: direto OK | {len(html) // 1024}KB")
@@ -152,9 +205,17 @@ async def buscar_html_scraperapi(target_url: str, portal: str) -> str | None:
     proxy_url = f"{SCRAPERAPI_URL}?{params}"
 
     for tentativa in range(1, MAX_TENTATIVAS + 1):
+        inicio = time.perf_counter()
         try:
             async with httpx.AsyncClient(timeout=TIMEOUT_SEGUNDOS) as client:
                 resp = await client.get(proxy_url)
+
+            if _observadores:
+                # url=target_url de propósito: proxy_url contém a chave.
+                _notificar(portal=portal, url=target_url, nivel="scraperapi",
+                           status=resp.status_code, bytes=len(resp.content),
+                           corpo=resp.content.decode("utf-8", errors="replace"), erro=None,
+                           inicio=inicio, fim=time.perf_counter())
 
             if resp.status_code == 200:
                 logger.info(f"{portal}: ScraperAPI OK | {len(resp.content) // 1024}KB (1 crédito)")
@@ -169,14 +230,31 @@ async def buscar_html_scraperapi(target_url: str, portal: str) -> str | None:
             return None
 
         except httpx.TimeoutException:
+            if _observadores:
+                _notificar(portal=portal, url=target_url, nivel="scraperapi", status=None, bytes=0,
+                           corpo="", erro="TimeoutException", inicio=inicio, fim=time.perf_counter())
             logger.warning(f"{portal}: ScraperAPI timeout na tentativa {tentativa}")
             if tentativa >= MAX_TENTATIVAS:
                 return None
         except Exception as e:
-            logger.error(f"{portal}: ScraperAPI erro: {e}")
+            if _observadores:
+                # Só o nome da exceção: a mensagem do httpx pode repetir a URL
+                # do proxy, que traz a chave.
+                _notificar(portal=portal, url=target_url, nivel="scraperapi", status=None, bytes=0,
+                           corpo="", erro=type(e).__name__, inicio=inicio, fim=time.perf_counter())
+            logger.error(f"{portal}: ScraperAPI erro: {type(e).__name__}: {_sem_chave(str(e))}")
             return None
 
     return None
+
+
+def _sem_chave(texto: str) -> str:
+    """Tira a chave da ScraperAPI de uma mensagem antes de logar. A mensagem de
+    erro do httpx costuma repetir a URL do proxy, que leva `api_key=` na query —
+    e o uvicorn.log fica no disco e circula em print de suporte."""
+    if SCRAPERAPI_KEY:
+        texto = texto.replace(SCRAPERAPI_KEY, "***")
+    return re.sub(r"(api_key=)[^&\s'\"]+", r"\1***", texto)
 
 
 async def buscar_html(target_url: str, portal: str) -> str | None:
