@@ -11,33 +11,31 @@ import {
 } from 'recharts'
 import { buscarEvolucao, consultarReferencialMRV } from '../api/client'
 import type { PontoEvolucao } from '../types'
+import {
+  descricaoSemana,
+  formatarEixoMoeda,
+  formatarMoeda,
+  pluralAnuncios,
+  rotuloSemana,
+} from '../utils/evolucao'
+
+// Mesmos valores do EvolucaoBairrosChart (tokens mrv-*).
+const COR_SUPERFICIE = '#0D1F17'
+const COR_LINHA = '#0B5A42'
+const COR_PONTO = '#0D6B4F'
 
 interface Props {
   cidade: string
   quartos?: number | null
 }
 
-function formatarMoeda(v: number): string {
-  return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+type PontoGrafico = PontoEvolucao & {
+  semana_fmt: string
+  semana_descricao: string
+  /** Todos os pontos (linha tracejada) e só os firmes (linha cheia). */
+  todos: number
+  firme: number | null
 }
-
-function formatarSemana(semana: string): string {
-  const m = semana.match(/(\d{4})-W(\d+)/)
-  if (!m) return semana
-  return `sem. ${m[2]}/${m[1].slice(2)}`
-}
-
-function descreverSemana(semana: string): string {
-  const m = semana.match(/(\d{4})-W(\d+)/)
-  if (!m) return semana
-  return `Semana ${Number(m[2])} de ${m[1]}`
-}
-
-function pluralAnuncios(total: number): string {
-  return `${total} ${total === 1 ? 'anúncio' : 'anúncios'}`
-}
-
-type PontoGrafico = PontoEvolucao & { semana_fmt: string; semana_descricao: string }
 
 interface PropsTooltip {
   active?: boolean
@@ -51,8 +49,9 @@ function TooltipCidade({ active, payload }: PropsTooltip) {
     <div className="rounded-panel border border-mrv-border bg-mrv-surface-2 px-3 py-2 text-[11px] text-mrv-text shadow-card">
       <div className="mb-1 text-mrv-text-muted">{ponto.semana_descricao}</div>
       <div className="font-data font-semibold">{formatarMoeda(ponto.preco_m2_medio)}/m²</div>
-      <div className="mt-0.5 text-[10px] text-mrv-text-muted">
+      <div className={`mt-0.5 text-[10px] ${ponto.pouco_confiavel ? 'text-amber-300/90' : 'text-mrv-text-muted'}`}>
         Média calculada com {pluralAnuncios(ponto.total)} encontrados nessa semana
+        {ponto.pouco_confiavel ? ' · poucos anúncios, o valor pode oscilar mais' : ''}
       </div>
     </div>
   )
@@ -88,11 +87,14 @@ export function EvolucaoChart({ cidade, quartos }: Props) {
 
   if (serie.length < 2) return null
 
-  const chartData = serie.map(p => ({
+  const chartData: PontoGrafico[] = serie.map(p => ({
     ...p,
-    semana_fmt: formatarSemana(p.semana),
-    semana_descricao: descreverSemana(p.semana),
+    semana_fmt: rotuloSemana(p.semana),
+    semana_descricao: descricaoSemana(p.semana),
+    todos: p.preco_m2_medio,
+    firme: p.pouco_confiavel ? null : p.preco_m2_medio,
   }))
+  const temSemanaFraca = serie.some(p => p.pouco_confiavel)
 
   return (
     <div className="bg-mrv-surface border border-mrv-border rounded-panel p-6 mb-5">
@@ -116,9 +118,10 @@ export function EvolucaoChart({ cidade, quartos }: Props) {
             tickLine={false}
           />
           <YAxis
-            tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`}
+            domain={['auto', 'auto']}
+            tickFormatter={formatarEixoMoeda}
             tick={{ fontSize: 9, fill: '#4A7A65' }}
-            width={68}
+            width={78}
             axisLine={false}
             tickLine={false}
           />
@@ -131,20 +134,55 @@ export function EvolucaoChart({ cidade, quartos }: Props) {
               stroke="#F39200"
               strokeDasharray="6 3"
               strokeWidth={1.5}
+              // Com o eixo em 'auto', a referência fora da faixa dos anúncios
+              // sumiria; estender o domínio mantém a comparação visível.
+              ifOverflow="extendDomain"
               label={{ value: 'Referência MRV', position: 'insideTopRight', fontSize: 9, fill: '#F39200' }}
             />
           )}
+          {/* Tracejada: o caminho inteiro, com marcador vazado nas semanas de
+              poucos anúncios. Cheia: só entre semanas com amostra firme. */}
           <Line
-            type="monotone"
-            dataKey="preco_m2_medio"
+            type="linear"
+            dataKey="todos"
+            stroke={COR_LINHA}
+            strokeOpacity={0.6}
+            strokeWidth={1.5}
+            strokeDasharray="4 4"
+            isAnimationActive={false}
+            activeDot={false}
+            dot={(props: { cx?: number; cy?: number; index?: number; payload?: PontoGrafico }) => {
+              if (!props.payload?.pouco_confiavel || props.cx == null || props.cy == null) {
+                return <g key={`d${props.index}`} />
+              }
+              return (
+                <circle
+                  key={`d${props.index}`}
+                  cx={props.cx} cy={props.cy} r={4}
+                  fill={COR_SUPERFICIE} stroke={COR_PONTO} strokeWidth={1.5}
+                />
+              )
+            }}
+          />
+          <Line
+            type="linear"
+            dataKey="firme"
             name="Todos os anúncios da cidade"
-            stroke="#0B5A42"
+            stroke={COR_LINHA}
             strokeWidth={2}
-            dot={{ fill: '#0D6B4F', r: 3, strokeWidth: 0 }}
+            connectNulls={false}
+            isAnimationActive={false}
+            dot={{ fill: COR_PONTO, r: 3, strokeWidth: 0 }}
             activeDot={{ r: 5, fill: '#F39200' }}
           />
         </LineChart>
       </ResponsiveContainer>
+      {temSemanaFraca && (
+        <p className="mt-2 max-w-4xl text-[10px] text-mrv-text-dim leading-relaxed">
+          Trecho tracejado com marcador vazado: semana com menos de 3 anúncios, em que o valor pode
+          mudar bastante com a entrada de novos imóveis.
+        </p>
+      )}
     </div>
   )
 }

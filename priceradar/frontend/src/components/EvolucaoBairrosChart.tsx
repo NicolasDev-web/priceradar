@@ -10,6 +10,13 @@ import {
 } from 'recharts'
 import { buscarEvolucaoBairros } from '../api/client'
 import type { EvolucaoBairrosResponse, PontoEvolucaoBairro } from '../types'
+import {
+  descricaoSemana,
+  formatarEixoMoeda,
+  formatarMoeda,
+  pluralAnuncios,
+  rotuloSemana,
+} from '../utils/evolucao'
 
 interface Props {
   cidade: string
@@ -37,27 +44,6 @@ const COR_SUPERFICIE = '#0D1F17'
 
 function normalizar(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
-}
-
-function formatarMoeda(v: number): string {
-  return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-}
-
-// Mesmo formato do EvolucaoChart: '2026-W36' → 'S36/26'.
-function formatarSemana(semana: string): string {
-  const m = semana.match(/(\d{4})-W(\d+)/)
-  if (!m) return semana
-  return `sem. ${m[2]}/${m[1].slice(2)}`
-}
-
-function descreverSemana(semana: string): string {
-  const m = semana.match(/(\d{4})-W(\d+)/)
-  if (!m) return semana
-  return `Semana ${Number(m[2])} de ${m[1]}`
-}
-
-function pluralAnuncios(total: number): string {
-  return `${total} ${total === 1 ? 'anúncio' : 'anúncios'}`
 }
 
 type Linha = Record<string, string | number | boolean | null>
@@ -156,8 +142,8 @@ export function EvolucaoBairrosChart({ cidade, quartos, bairros }: Props) {
     return dados.periodos.map(semana => {
       const linha: Linha = {
         semana,
-        semana_fmt: formatarSemana(semana),
-        semana_descricao: descreverSemana(semana),
+        semana_fmt: rotuloSemana(semana),
+        semana_descricao: descricaoSemana(semana),
       }
       series.forEach((s, i) => {
         const p: PontoEvolucaoBairro | undefined = s.serie.find(x => x.semana === semana)
@@ -244,7 +230,7 @@ export function EvolucaoBairrosChart({ cidade, quartos, bairros }: Props) {
               onClick={() => alternar(o.bairro)}
               disabled={bloqueado}
               aria-pressed={ativo}
-              title={bloqueado ? `No máximo ${MAX_LINHAS} bairros por vez` : `${pluralAnuncios(o.total)} encontrados no histórico`}
+              title={bloqueado ? `No máximo ${MAX_LINHAS} bairros por vez` : `${pluralAnuncios(o.total)} diferentes em todas as semanas — cada ponto do gráfico usa só os da semana`}
               className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[11px] transition-colors ${
                 ativo
                   ? 'border-mrv-border-bright bg-mrv-surface-2 text-mrv-text'
@@ -256,7 +242,8 @@ export function EvolucaoBairrosChart({ cidade, quartos, bairros }: Props) {
                 style={{ background: serie ? serie.cor : 'transparent', border: serie ? 'none' : `1px solid ${COR_EIXO}` }}
               />
               {o.bairro}
-              <span className="text-mrv-text-dim">· {pluralAnuncios(o.total)}</span>
+              {/* Total do histórico, não do ponto: o tooltip mostra o da semana. */}
+              <span className="text-mrv-text-dim">· {o.total} no histórico</span>
             </button>
           )
         })}
@@ -273,9 +260,9 @@ export function EvolucaoBairrosChart({ cidade, quartos, bairros }: Props) {
           />
           <YAxis
             domain={['auto', 'auto']}
-            tickFormatter={(v: number) => `R$ ${(v / 1000).toFixed(1)}k`}
+            tickFormatter={formatarEixoMoeda}
             tick={{ fontSize: 9, fill: COR_EIXO }}
-            width={68}
+            width={78}
             axisLine={false}
             tickLine={false}
           />
@@ -328,9 +315,10 @@ export function EvolucaoBairrosChart({ cidade, quartos, bairros }: Props) {
       </ResponsiveContainer>
 
       <p className="mt-2 max-w-4xl text-[10px] text-mrv-text-dim leading-relaxed">
-        Cada ponto usa o preço médio por m² dos anúncios encontrados naquela semana. Quando há menos
-        de {` ${dados.min_amostra} anúncios`}, o trecho fica pontilhado para avisar que o valor pode
-        mudar bastante com a entrada de novos imóveis.
+        Cada ponto usa o preço médio por m² dos anúncios encontrados naquela semana. Marcador vazado:
+        menos de {dados.min_amostra} anúncios, o valor pode mudar bastante com a entrada de novos
+        imóveis. A linha tracejada passa por esses pontos e também liga semanas em que o bairro
+        não teve anúncio; a linha cheia só liga semanas com amostra suficiente.
         {semHistorico.length > 0 && ` Ainda sem dados: ${semHistorico.join(', ')}.`}
       </p>
     </div>

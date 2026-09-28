@@ -85,7 +85,7 @@ def test_cidade_da_busca_casa_mesmo_com_anuncio_gravado_sem_uf():
     async def corpo(db):
         await gravar(db, [emp("https://vr/1", 7000), emp("https://vr/2", 8000)])
         serie = await preco_m2_historico(db, "Fortaleza, CE", None)
-        assert serie == [{"semana": "2026-W36", "preco_m2_medio": 7500.0, "total": 2}]
+        assert serie == [{"semana": "2026-W36", "preco_m2_medio": 7500.0, "total": 2, "pouco_confiavel": True}]
         # Variações de grafia da mesma cidade também casam.
         assert await preco_m2_historico(db, "fortaleza,ce", None) == serie
         assert await preco_m2_historico(db, "Fortaleza", None) == serie
@@ -118,7 +118,7 @@ def test_mesmo_anuncio_em_varias_buscas_conta_uma_vez_por_semana():
         # Fica a observação mais recente (6000), não a primeira nem a média.
         assert por_url == {"https://vr/1": 6000.0, "https://vr/2": 9000.0}
         serie = await preco_m2_historico(db, "Fortaleza, CE", None)
-        assert serie == [{"semana": "2026-W36", "preco_m2_medio": 7500.0, "total": 2}]
+        assert serie == [{"semana": "2026-W36", "preco_m2_medio": 7500.0, "total": 2, "pouco_confiavel": True}]
     com_banco(corpo)
 
 
@@ -130,6 +130,15 @@ def test_mesmo_anuncio_em_semanas_diferentes_conta_em_cada_uma():
         assert [(p["semana"], p["preco_m2_medio"], p["total"]) for p in serie] == [
             ("2026-W36", 7000.0, 1), ("2026-W37", 7700.0, 1),
         ]
+    com_banco(corpo)
+
+
+def test_semana_da_cidade_com_poucos_anuncios_sai_marcada():
+    async def corpo(db):
+        await gravar(db, [emp(f"https://vr/{i}", 7000) for i in range(3)])
+        await gravar(db, [emp("https://vr/9", 7700, quando=SEMANA_2)], quando=SEMANA_2, preco_max=800_000)
+        serie = await preco_m2_historico(db, "Fortaleza, CE", None)
+        assert [(p["total"], p["pouco_confiavel"]) for p in serie] == [(3, False), (1, True)]
     com_banco(corpo)
 
 
@@ -292,8 +301,8 @@ def test_endpoint_evolucao_cidade_passa_a_ter_dados(api):
     cliente, auth = api
     resp = cliente.get("/api/historico/evolucao", params={"cidade": "Fortaleza, CE"}, headers=auth)
     assert resp.json() == {"cidade": "Fortaleza, CE", "serie": [
-        {"semana": "2026-W36", "preco_m2_medio": 7000.0, "total": 5},
-        {"semana": "2026-W37", "preco_m2_medio": 6700.0, "total": 2},
+        {"semana": "2026-W36", "preco_m2_medio": 7000.0, "total": 5, "pouco_confiavel": False},
+        {"semana": "2026-W37", "preco_m2_medio": 6700.0, "total": 2, "pouco_confiavel": True},
     ]}
 
 

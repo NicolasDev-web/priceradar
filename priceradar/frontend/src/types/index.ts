@@ -112,6 +112,8 @@ export interface PontoEvolucao {
   semana: string
   preco_m2_medio: number
   total: number
+  /** Menos anúncios que o mínimo (3): desenhado tracejado, não como tendência. */
+  pouco_confiavel: boolean
 }
 
 export interface HistoricoResponse {

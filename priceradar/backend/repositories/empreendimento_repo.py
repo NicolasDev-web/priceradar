@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models_db import BuscaSalva, EmpreendimentoDB, ReferencialMRV
 from scraper.rsc_grupozap import chave_url
+from services.evolucao import MIN_AMOSTRA_PONTO
 from services.texto import normalizar
 
 
@@ -105,7 +106,13 @@ async def preco_m2_historico(db: AsyncSession, cidade: str, quartos: int | None)
     for o in await observacoes_por_periodo(db, cidade, quartos):
         por_semana.setdefault(o["semana"], []).append(o["preco_m2"])
     return [
-        {"semana": s, "preco_m2_medio": round(sum(v) / len(v), 2), "total": len(v)}
+        {
+            "semana": s,
+            "preco_m2_medio": round(sum(v) / len(v), 2),
+            "total": len(v),
+            # Mesmo corte do gráfico por bairro: média de 1 ou 2 anúncios não é tendência.
+            "pouco_confiavel": len(v) < MIN_AMOSTRA_PONTO,
+        }
         for s, v in sorted(por_semana.items())
     ]
 
