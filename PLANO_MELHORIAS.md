@@ -193,3 +193,38 @@ com pelo menos 2 fontes novas funcionando e nenhum portal antigo regredindo.
 | Excel média × mediana | Decidido: média (mesma regra dos cards). Sem mudança. |
 | Histórico por anúncio | Casado pela URL com a última busca igual. |
 | Alertas no app | Selo "Novo", selo "▼/▲ x% desde dd/mm", resumo "Desde a última busca igual". |
+
+---
+
+## F5 — Medir e ampliar a coleta nos portais
+
+Agentes: `medicao-portais` (F5.1–F5.3) e `expansao-portais` (F5.4–F5.6).
+**Só vale rodando no PC que serve o link oficial, na rede dele** (a rede corporativa
+pode gerar 403 que não existe em produção). F5.2 é código e pode ser feito em qualquer lugar.
+
+| # | Tarefa | Agente | Precisa de rede? |
+| --- | --- | --- | --- |
+| F5.1 | Rodar `scripts/diagnosticar_fotos.py --json data/diagnostico-AAAAMMDD.json` e registrar o resultado por portal em `BASELINE.json`. | medicao-portais | Sim |
+| F5.2 | Estender o script: status HTTP e tamanho da resposta por portal, classificação (ok / bloqueado / parser quebrado / sem inventário / erro), páginas lidas × teto e se a última página ainda trouxe anúncio novo. Saída em tabela e JSON. Com testes (scraper falso). | medicao-portais | **Não** |
+| F5.3 | Relatório curto: ordem de conserto (maior volume esperado primeiro) e teto de páginas sugerido por portal. | medicao-portais | Sim |
+| F5.4 | Consertar os portais "parser quebrado"/"sem inventário", um por commit, com fixture de HTML real e teste. "Bloqueado" não se força: reportar. | expansao-portais | Sim |
+| F5.5 | Subir `*_MAX_PAGINAS` só nos portais que ainda traziam anúncio novo na última página. | expansao-portais | Sim |
+| F5.6 | Medir de novo. Pronto quando: bruto > BASELINE, nenhum portal "ok" regrediu, nenhum 403 novo. | expansao-portais | Sim |
+
+## F6 — Evolução do preço/m² por bairro
+
+Agente: `evolucao-bairros`. Não depende de rede: usa o histórico gravado no banco.
+
+**Bug encontrado no planejamento (28/09):** a evolução por cidade que já existe nunca
+mostrou dados — filtrava `empreendimentos.cidade` por "fortaleza, ce", mas os anúncios
+são gravados como "fortaleza" (quem guarda "Fortaleza, CE" é a tabela `buscas`). E
+contava o mesmo anúncio uma vez por busca (33 linhas para 12 anúncios no banco de teste).
+
+| # | Tarefa | Onde |
+| --- | --- | --- |
+| F6.1 | Consulta-base corrigida: cidade via join com `buscas`, um anúncio por período (URL normalizada, observação mais recente). Corrige também a evolução por cidade existente. | `repositories/empreendimento_repo.py` |
+| F6.2 | Série por bairro: por período (semana ISO) e bairro → média, mediana e n. Bairro comparado normalizado. Ponto com n < 3 marcado como pouco confiável. | `services/evolucao.py` (novo) |
+| F6.3 | Endpoint `GET /api/historico/evolucao-bairros?cidade=&quartos=&bairros=` → bairros ordenados por volume, com série cada. | `main.py`, `models.py` |
+| F6.4 | Gráfico `EvolucaoBairrosChart`: uma linha por bairro (até ~6), padrão = bairros da busca ou os de maior volume, seletor para trocar, tooltip com n, ponto fraco tracejado, mensagem quando há menos de 2 períodos. | `frontend/src/components/` |
+| F6.5 | Testes: bug da cidade, deduplicação, amostra mínima, bairro com acento/sem acento, filtro de quartos, endpoint. | `tests/test_evolucao.py` |
+| F6.6 | (Depois, se aprovado) aba EVOLUÇÃO no Excel exportado — via agente `excel-design-architect`. | `services/export.py` |
