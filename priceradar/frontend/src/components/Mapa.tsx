@@ -121,7 +121,6 @@ function AjustarVista({ pontos }: { pontos: L.LatLngTuple[] }) {
 }
 
 export function Mapa({ empreendimentos, precoM2Medio, semLocalizacao, comCoordenada }: Props) {
-  // Lido na montagem: o token não muda enquanto o mapa está na tela.
   const urlTiles = useMemo(() => urlTilesMapa(), [])
   const [usarFallback, setUsarFallback] = useState(false)
   const errosTile = useRef(0)

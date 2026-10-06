@@ -3,20 +3,17 @@
 O que precisa ficar travado é o que impede o endpoint de virar SSRF: só https,
 só hosts dos portais, nada de IP, nada de redirecionar para fora, só imagem.
 """
-import os
 import sys
 from pathlib import Path
 
 import pytest
 
-os.environ.setdefault("SECRET_KEY", "chave-de-teste")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
 import main  # noqa: E402
 from services import imagens  # noqa: E402
-from services.auth import gerar_token  # noqa: E402
 
 JPG = b"\xff\xd8\xff\xe0falso"
 FOTO = "https://resizedimgs.vivareal.com/fit-in/870x653/named.images.sp/abc/foto.jpg"
@@ -51,8 +48,8 @@ def usar(monkeypatch, *respostas):
     return falso
 
 
-def pedir(api, url, token=None):
-    return api.get("/api/imagem", params={"u": url, "t": gerar_token() if token is None else token})
+def pedir(api, url):
+    return api.get("/api/imagem", params={"u": url})
 
 
 @pytest.fixture
@@ -88,12 +85,6 @@ def test_serve_imagem_e_guarda_cache(api, cache, monkeypatch):
     assert r.status_code == 200 and r.content == JPG and r.headers["content-type"] == "image/jpeg"
     assert pedir(api, FOTO).status_code == 200
     assert len(falso.pedidos) == 1                       # segunda veio do cache
-
-
-def test_sem_token_e_401(api, cache, monkeypatch):
-    falso = usar(monkeypatch, Resp())
-    assert pedir(api, FOTO, token="").status_code == 401
-    assert falso.pedidos == []
 
 
 def test_host_de_fora_e_400_sem_sair_para_a_rede(api, cache, monkeypatch):

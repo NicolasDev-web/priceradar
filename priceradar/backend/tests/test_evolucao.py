@@ -10,7 +10,6 @@ O que importa travar:
 - o endpoint devolve o formato combinado com o frontend.
 """
 import asyncio
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -20,7 +19,6 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-os.environ.setdefault("SECRET_KEY", "chave-de-teste")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -233,7 +231,6 @@ def api(tmp_path):
     Arquivo em vez de :memory: porque o TestClient roda as rotas em outro event
     loop; NullPool evita reaproveitar conexão aiosqlite entre loops."""
     import main
-    from services.auth import gerar_token
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'teste.db'}", poolclass=NullPool)
     sessao = async_sessionmaker(engine, expire_on_commit=False)
@@ -261,15 +258,15 @@ def api(tmp_path):
 
     main.app.dependency_overrides[get_db] = db_de_teste
     try:
-        yield TestClient(main.app), {"Authorization": f"Bearer {gerar_token()}"}
+        yield TestClient(main.app)
     finally:
         main.app.dependency_overrides.pop(get_db, None)
         asyncio.run(engine.dispose())
 
 
 def test_endpoint_evolucao_bairros(api):
-    cliente, auth = api
-    resp = cliente.get("/api/historico/evolucao-bairros", params={"cidade": "Fortaleza, CE"}, headers=auth)
+    cliente = api
+    resp = cliente.get("/api/historico/evolucao-bairros", params={"cidade": "Fortaleza, CE"})
     assert resp.status_code == 200
     corpo = resp.json()
     assert corpo["cidade"] == "Fortaleza, CE" and corpo["quartos"] is None
@@ -283,29 +280,23 @@ def test_endpoint_evolucao_bairros(api):
 
 
 def test_endpoint_filtra_bairros_e_quartos(api):
-    cliente, auth = api
+    cliente = api
     resp = cliente.get("/api/historico/evolucao-bairros",
-                       params={"cidade": "Fortaleza, CE", "quartos": 2, "bairros": "aldeóta"}, headers=auth)
+                       params={"cidade": "Fortaleza, CE", "quartos": 2, "bairros": "aldeóta"})
     corpo = resp.json()
     (aldeota,) = corpo["bairros"]
     assert aldeota["bairro"] == "Aldeota"
     # O anúncio de 3 quartos ficou fora.
     assert [p["preco_m2_medio"] for p in aldeota["serie"]] == [6000.0, 6100.0]
     # Parâmetro repetido também vale.
-    resp = cliente.get("/api/historico/evolucao-bairros?cidade=Fortaleza,%20CE&bairros=Meireles&bairros=Aldeota",
-                       headers=auth)
+    resp = cliente.get("/api/historico/evolucao-bairros?cidade=Fortaleza,%20CE&bairros=Meireles&bairros=Aldeota")
     assert [b["bairro"] for b in resp.json()["bairros"]] == ["Meireles", "Aldeota"]
 
 
 def test_endpoint_evolucao_cidade_passa_a_ter_dados(api):
-    cliente, auth = api
-    resp = cliente.get("/api/historico/evolucao", params={"cidade": "Fortaleza, CE"}, headers=auth)
+    cliente = api
+    resp = cliente.get("/api/historico/evolucao", params={"cidade": "Fortaleza, CE"})
     assert resp.json() == {"cidade": "Fortaleza, CE", "serie": [
         {"semana": "2026-W36", "preco_m2_medio": 7000.0, "total": 5, "pouco_confiavel": False},
         {"semana": "2026-W37", "preco_m2_medio": 6700.0, "total": 2, "pouco_confiavel": True},
     ]}
-
-
-def test_endpoint_exige_login(api):
-    cliente, _ = api
-    assert cliente.get("/api/historico/evolucao-bairros", params={"cidade": "Fortaleza, CE"}).status_code == 401

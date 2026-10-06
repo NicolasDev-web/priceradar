@@ -209,14 +209,6 @@ class ExportRequest(BaseModel):
     fontes: list[str] | None = None
 
 
-class LoginRequest(BaseModel):
-    senha: str
-
-
-class LoginResponse(BaseModel):
-    token: str
-
-
 # ── Evolução por bairro (GET /api/historico/evolucao-bairros) ─────────────────
 
 class PontoEvolucaoBairro(BaseModel):

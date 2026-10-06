@@ -19,65 +19,19 @@ const BASE_URL = import.meta.env.VITE_API_URL ?? ''
 // timeout de 90s: o scraping via ScraperAPI pode levar alguns segundos por portal
 const api = axios.create({ baseURL: BASE_URL, timeout: 90_000 })
 
-const TOKEN_KEY = 'priceradar_token'
-
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
-}
-
 /**
  * Molde de URL dos tiles do mapa, servidos pelo proxy do backend (a chave da
- * CARTO fica lá, não no bundle). O token vai na query porque o Leaflet pede
- * tiles como <img>, que não manda cabeçalho Authorization.
+ * CARTO fica lá, não no bundle).
  */
 export function urlTilesMapa(): string {
-  const token = encodeURIComponent(getToken() ?? '')
-  return `${BASE_URL}/api/tiles/{z}/{x}/{y}.png?r={r}&t=${token}`
+  return `${BASE_URL}/api/tiles/{z}/{x}/{y}.png?r={r}`
 }
 
 /** A mesma foto via backend — plano B quando o CDN do portal não carrega
- *  (rede corporativa, hotlink). Token na query pelo mesmo motivo dos tiles. */
+ *  (rede corporativa, hotlink). */
 export function urlImagemProxy(url: string): string {
-  const token = encodeURIComponent(getToken() ?? '')
-  return `${BASE_URL}/api/imagem?u=${encodeURIComponent(url)}&t=${token}`
+  return `${BASE_URL}/api/imagem?u=${encodeURIComponent(url)}`
 }
-
-function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token)
-}
-
-function limparToken(): void {
-  localStorage.removeItem(TOKEN_KEY)
-}
-
-export async function login(senha: string): Promise<void> {
-  const { data } = await api.post<{ token: string }>('/api/login', { senha })
-  setToken(data.token)
-}
-
-// Anexa o token em toda chamada — nenhuma das funções abaixo (buscarConcorrentes,
-// exportarExcel etc.) precisa saber que autenticação existe.
-api.interceptors.request.use((config) => {
-  const token = getToken()
-  if (token) {
-    config.headers = config.headers ?? {}
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-// 401 = token ausente/expirado/inválido. Limpa e avisa a UI — sem refresh
-// (não existe) e sem re-tentar a mesma chamada sozinho.
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      limparToken()
-      window.dispatchEvent(new Event('priceradar:sessao-expirada'))
-    }
-    return Promise.reject(error)
-  },
-)
 
 // Cache de resposta de busca no sessionStorage — TTL curto, só para proteger
 // contra reenvio acidental do mesmo formulário ou "voltar" no navegador. Não

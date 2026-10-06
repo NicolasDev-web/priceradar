@@ -5,25 +5,19 @@ O que importa travar:
 - coordenada fora da grade nunca vira requisição para fora;
 - sem chave, 503 (é o sinal para o mapa cair no provedor sem chave);
 - o cache evita a segunda ida à CARTO;
-- resposta que não é imagem não entra no cache;
-- sem token de sessão, 401 — o proxy não pode ficar aberto na internet;
-- o token não aparece no access log.
+- resposta que não é imagem não entra no cache.
 """
-import logging
-import os
 import sys
 from pathlib import Path
 
 import pytest
 
-os.environ.setdefault("SECRET_KEY", "chave-de-teste")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
 import main  # noqa: E402
 from services import tiles  # noqa: E402
-from services.auth import gerar_token  # noqa: E402
 
 PNG = b"\x89PNG\r\n\x1a\nfalso"
 
@@ -59,9 +53,8 @@ def api():
     return TestClient(main.app)
 
 
-def url(z=3, x=4, y=3, token=None, r=""):
-    token = gerar_token() if token is None else token
-    return f"/api/tiles/{z}/{x}/{y}.png?t={token}&r={r}"
+def url(z=3, x=4, y=3, r=""):
+    return f"/api/tiles/{z}/{x}/{y}.png?r={r}"
 
 
 def test_serve_tile_e_repassa_chave(api, cliente_http):
@@ -101,20 +94,3 @@ def test_resposta_que_nao_e_imagem_nao_entra_no_cache(api, cliente_http, tmp_pat
     cliente_http.resposta = RespostaFalsa(status=401, conteudo=b"{}", tipo="application/json")
     assert api.get(url()).status_code == 503
     assert not list(tmp_path.rglob("*.png"))
-
-
-def test_sem_token_ou_token_invalido_e_401(api, cliente_http):
-    assert api.get(url(token="")).status_code == 401
-    assert api.get(url(token="adulterado.abc")).status_code == 401
-    assert cliente_http.chamadas == []
-
-
-def test_token_nao_vai_para_o_access_log():
-    filtro = main._OcultarTokenNoLog()
-    registro = logging.LogRecord(
-        "uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
-        ("127.0.0.1:1", "GET", "/api/tiles/3/4/3.png?t=segredo.abc&r=", "1.1", 200), None,
-    )
-    filtro.filter(registro)
-    assert "segredo" not in registro.getMessage()
-    assert "t=***" in registro.getMessage()

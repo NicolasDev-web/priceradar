@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { AlertTriangle, Clock, Download, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { buscarConcorrentes, exportarExcel, getToken } from './api/client'
+import { buscarConcorrentes, exportarExcel } from './api/client'
 import { ComparativoBairros } from './components/ComparativoBairros'
 import { EvolucaoBairrosChart } from './components/EvolucaoBairrosChart'
 import { EvolucaoChart } from './components/EvolucaoChart'
@@ -9,7 +9,6 @@ import { FunilColeta } from './components/FunilColeta'
 import { HistoricoPanel } from './components/HistoricoPanel'
 import { KpiBar } from './components/KpiBar'
 import { LoadingState } from './components/LoadingState'
-import { Login } from './components/Login'
 import { Mapa } from './components/Mapa'
 import { PriceChart } from './components/PriceChart'
 import { ReferencialMRVForm } from './components/ReferencialMRVForm'
@@ -54,17 +53,8 @@ export default function App() {
   )
   const [mostrarHistorico, setMostrarHistorico] = useState(false)
   const [mostrarFormMRV, setMostrarFormMRV] = useState(false)
-  const [autenticado, setAutenticado] = useState(() => !!getToken())
   const [jobId, setJobId] = useState<string | null>(null)
   const buscaAbortRef = useRef<AbortController | null>(null)
-
-  useEffect(() => {
-    function aoExpirar() {
-      setAutenticado(false)
-    }
-    window.addEventListener('priceradar:sessao-expirada', aoExpirar)
-    return () => window.removeEventListener('priceradar:sessao-expirada', aoExpirar)
-  }, [])
 
   const fontesErro = resultado?.diagnostico?.fontes_erro ?? []
   const coletaFalhou = (resultado?.diagnostico?.fontes_ok.length ?? 0) === 0
@@ -147,10 +137,6 @@ export default function App() {
     if (ultimaBusca) {
       await handleBuscar(ultimaBusca)
     }
-  }
-
-  if (!autenticado) {
-    return <Login onAutenticado={() => setAutenticado(true)} />
   }
 
   return (

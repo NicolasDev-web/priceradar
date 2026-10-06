@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import re
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -14,7 +13,7 @@ if sys.platform == "win32":
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -26,21 +25,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger(__name__)
 
 
-class _OcultarTokenNoLog(logging.Filter):
-    """O proxy de tiles recebe o token na query (`?t=`), e o access log do
-    uvicorn grava a URL inteira — sem isto, `uvicorn.log` acumularia tokens de
-    sessão válidos por 30 dias."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if isinstance(record.args, tuple) and len(record.args) >= 3 and isinstance(record.args[2], str):
-            args = list(record.args)
-            args[2] = re.sub(r"([?&]t=)[^&\s]+", r"\1***", args[2])
-            record.args = tuple(args)
-        return True
-
-
-logging.getLogger("uvicorn.access").addFilter(_OcultarTokenNoLog())
-
 # Validade do cache de buscas: dentro desse tempo, uma busca idêntica reaproveita
 # os resultados do banco em vez de refazer o scraping.
 CACHE_MINUTOS = int(os.getenv("CACHE_MINUTOS", "60"))
@@ -51,8 +35,6 @@ from models import (
     BuscaResponse,
     EvolucaoBairrosResponse,
     ExportRequest,
-    LoginRequest,
-    LoginResponse,
 )
 from repositories.busca_repo import (
     buscar_anterior,
@@ -69,7 +51,6 @@ from repositories.empreendimento_repo import (
     upsert_referencial_mrv,
 )
 from services import jobs
-from services.auth import conferir_senha, exigir_login, gerar_token, token_valido
 from services.bairros import listar_bairros
 from services.comparacao import comparar_com_anterior
 from services.evolucao import ler_lista_bairros, serie_por_bairro
@@ -104,36 +85,20 @@ app.add_middleware(
     expose_headers=["Content-Disposition"],
 )
 
-# Agrupa as rotas /api/* que exigem login, para não repetir `Depends(exigir_login)`
-# em cada uma. /api/login e /api/health ficam de fora, direto em `app`.
-router_protegido = APIRouter(dependencies=[Depends(exigir_login)])
-
 
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "version": "2.0.0", "timestamp": datetime.now().isoformat()}
 
 
-@app.post("/api/login", response_model=LoginResponse)
-async def login(payload: LoginRequest):
-    if not conferir_senha(payload.senha):
-        raise HTTPException(status_code=401, detail="Senha incorreta")
-    return LoginResponse(token=gerar_token())
-
-
 @app.get("/api/imagem")
 async def imagem_anuncio(
     u: str = Query(description="URL da foto no CDN do portal"),
-    t: str = Query(default="", description="Token de sessão"),
 ):
     """
     Foto do anúncio via backend (ver services/imagens.py). O card só chama
     isto quando a foto direta falha — rede que bloqueia o CDN, ou hotlink.
-    Fora do `router_protegido` pelo mesmo motivo dos tiles: <img> não manda
-    cabeçalho, então o token vem na query (e é mascarado no log).
     """
-    if not token_valido(t):
-        raise HTTPException(status_code=401, detail="Não autenticado")
     if not url_permitida(u):
         raise HTTPException(status_code=400, detail="Endereço de imagem não permitido")
     try:
@@ -151,18 +116,8 @@ async def tile_mapa(
     x: int,
     y: int,
     r: str = Query(default="", description='"@2x" para telas de alta densidade'),
-    t: str = Query(default="", description="Token de sessão"),
 ):
-    """
-    Tile do mapa via proxy (ver services/tiles.py).
-
-    Fora do `router_protegido` porque o Leaflet pede tiles como <img>, que não
-    manda cabeçalho Authorization — o token vem na query. Ainda assim exige
-    login: o app fica exposto pelo Tailscale Funnel, e um proxy aberto deixaria
-    qualquer um gastar a cota da chave.
-    """
-    if not token_valido(t):
-        raise HTTPException(status_code=401, detail="Não autenticado")
+    """Tile do mapa via proxy (ver services/tiles.py)."""
     if not coordenada_valida(z, x, y):
         raise HTTPException(status_code=400, detail="Tile fora da grade")
     try:
@@ -171,12 +126,11 @@ async def tile_mapa(
         logger.info(f"Tile {z}/{x}/{y} indisponível: {e}")
         # 503 faz o mapa trocar para o provedor sem chave.
         raise HTTPException(status_code=503, detail="Tile indisponível")
-    # `private`: a URL carrega o token, não deve parar em cache compartilhado.
     return Response(content=png, media_type="image/png",
                     headers={"Cache-Control": "private, max-age=604800"})
 
 
-@router_protegido.post("/api/buscar", response_model=BuscaResponse)
+@app.post("/api/buscar", response_model=BuscaResponse)
 async def buscar(
     request: BuscaRequest,
     forcar: bool = Query(default=False, description="Ignora o cache e refaz o scraping"),
@@ -207,7 +161,7 @@ async def buscar(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router_protegido.get("/api/buscar/jobs/{job_id}")
+@app.get("/api/buscar/jobs/{job_id}")
 async def status_job(job_id: str):
     """Progresso por portal de uma busca ao vivo em andamento — para o
     frontend fazer polling durante os 30-90s de scraping."""
@@ -228,7 +182,7 @@ async def status_job(job_id: str):
     }
 
 
-@router_protegido.post("/api/exportar")
+@app.post("/api/exportar")
 async def exportar(payload: ExportRequest):
     """Gera o Excel a partir dos resultados já buscados (não refaz scraping)."""
     try:
@@ -250,7 +204,7 @@ async def exportar(payload: ExportRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router_protegido.get("/api/bairros")
+@app.get("/api/bairros")
 async def listar_bairros_da_cidade(cidade: str):
     """Bairros com oferta na cidade, para sugerir no formulário."""
     try:
@@ -263,7 +217,7 @@ async def listar_bairros_da_cidade(cidade: str):
 
 # ── Histórico ──────────────────────────────────────────────────────────────────
 
-@router_protegido.get("/api/historico")
+@app.get("/api/historico")
 async def listar_historico(cidade: str | None = None, db: AsyncSession = Depends(get_db)):
     buscas = await listar_buscas(db, cidade=cidade)
     return {
@@ -278,13 +232,13 @@ async def listar_historico(cidade: str | None = None, db: AsyncSession = Depends
     }
 
 
-@router_protegido.get("/api/historico/evolucao")
+@app.get("/api/historico/evolucao")
 async def evolucao_preco(cidade: str, quartos: int | None = None, db: AsyncSession = Depends(get_db)):
     dados = await preco_m2_historico(db, cidade, quartos)
     return {"cidade": cidade, "serie": dados}
 
 
-@router_protegido.get("/api/historico/evolucao-bairros", response_model=EvolucaoBairrosResponse)
+@app.get("/api/historico/evolucao-bairros", response_model=EvolucaoBairrosResponse)
 async def evolucao_bairros(
     cidade: str,
     quartos: int | None = None,
@@ -303,7 +257,7 @@ async def evolucao_bairros(
     return {"cidade": cidade, "quartos": quartos, **serie_por_bairro(observacoes, ler_lista_bairros(bairros))}
 
 
-@router_protegido.get("/api/historico/{busca_id}")
+@app.get("/api/historico/{busca_id}")
 async def detalhe_historico(busca_id: str, db: AsyncSession = Depends(get_db)):
     busca = await buscar_por_id(db, busca_id)
     if not busca:
@@ -311,7 +265,7 @@ async def detalhe_historico(busca_id: str, db: AsyncSession = Depends(get_db)):
     return busca
 
 
-@router_protegido.delete("/api/historico/{busca_id}")
+@app.delete("/api/historico/{busca_id}")
 async def deletar_historico(busca_id: str, db: AsyncSession = Depends(get_db)):
     ok = await deletar_busca(db, busca_id)
     return {"ok": ok}
@@ -319,7 +273,7 @@ async def deletar_historico(busca_id: str, db: AsyncSession = Depends(get_db)):
 
 # ── Referencial MRV ────────────────────────────────────────────────────────────
 
-@router_protegido.post("/api/mrv/referencial")
+@app.post("/api/mrv/referencial")
 async def cadastrar_referencial(
     cidade: str,
     produto: str,
@@ -331,7 +285,7 @@ async def cadastrar_referencial(
     return {"ok": True}
 
 
-@router_protegido.get("/api/mrv/referencial")
+@app.get("/api/mrv/referencial")
 async def consultar_referencial(
     cidade: str,
     quartos: int | None = None,
@@ -339,9 +293,6 @@ async def consultar_referencial(
 ):
     preco = await get_referencial_mrv(db, cidade, quartos)
     return {"cidade": cidade, "quartos": quartos, "preco_m2_mrv": preco}
-
-
-app.include_router(router_protegido)
 
 
 # ── Frontend ───────────────────────────────────────────────────────────────────
