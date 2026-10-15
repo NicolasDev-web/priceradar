@@ -99,6 +99,59 @@ async def observacoes_por_periodo(db: AsyncSession, cidade: str, quartos: int | 
     return sorted(mais_recente.values(), key=lambda o: (o["semana"], o["url"]))
 
 
+_COLUNAS_HISTORICO = (
+    "url_anuncio", "nome_anuncio", "nome_empreendimento", "construtora", "cidade", "bairro",
+    "endereco", "cep", "eh_lancamento", "grupo_id", "latitude", "longitude", "origem_coordenada",
+    "portal", "preco", "area_m2", "preco_m2", "quartos", "banheiros", "vagas", "descricao",
+    "data_coleta", "fotos",
+)
+
+
+async def historico_da_cidade(db: AsyncSession, cidade: str) -> list[dict]:
+    """
+    Todo anúncio já visto na cidade, uma vez cada: a observação mais recente,
+    mais `primeira_vez`/`ultima_vez` e `grupos_gravados` (os grupo_id que as
+    buscas lhe deram — o mesmo prédio pode ter ganhado ids diferentes conforme
+    a amostra de cada busca).
+
+    Base do dossiê: reagrupar o histórico inteiro custa ~0,1 s para 5,6 mil
+    anúncios, e assim buscas gravadas antes do agrupamento também contam.
+    """
+    cidades = await _cidades_gravadas(db, cidade)
+    if not cidades:
+        return []
+    colunas = [getattr(EmpreendimentoDB, c) for c in _COLUNAS_HISTORICO]
+    q = (
+        select(*colunas, BuscaSalva.criado_em)
+        .join(BuscaSalva, EmpreendimentoDB.busca_id == BuscaSalva.id)
+        .where(BuscaSalva.cidade.in_(cidades), EmpreendimentoDB.preco_m2 > 0)
+    )
+    por_url: dict[str, dict] = {}
+    for linha in (await db.execute(q)).all():
+        item = dict(zip(_COLUNAS_HISTORICO, linha[:-1]))
+        quando = item["data_coleta"] or linha[-1]
+        if quando is None:
+            continue
+        chave = chave_url(item["url_anuncio"]) or item["url_anuncio"]
+        atual = por_url.get(chave)
+        if atual is None:
+            item.update(primeira_vez=quando, ultima_vez=quando, grupos_gravados=set())
+            por_url[chave] = item
+            atual = item
+        elif quando > atual["ultima_vez"]:
+            # Observação mais nova vira a referência (preço atual), mas a data
+            # de primeira aparição e os ids gravados acumulam.
+            item.update(primeira_vez=atual["primeira_vez"], ultima_vez=quando,
+                        grupos_gravados=atual["grupos_gravados"])
+            por_url[chave] = item
+            atual = item
+        else:
+            atual["primeira_vez"] = min(atual["primeira_vez"], quando)
+        if item.get("grupo_id"):
+            atual["grupos_gravados"].add(item["grupo_id"])
+    return list(por_url.values())
+
+
 async def preco_m2_historico(db: AsyncSession, cidade: str, quartos: int | None) -> list[dict]:
     """Evolução por cidade (EvolucaoChart). Mesmo formato de antes; a base
     agora é `observacoes_por_periodo` — cidade via busca e sem contagem dupla."""

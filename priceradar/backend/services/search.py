@@ -7,7 +7,14 @@ import time
 import uuid
 from datetime import datetime
 
-from models import BuscaRequest, BuscaResponse, DiagnosticoColeta, Empreendimento, ResumoBairro
+from models import (
+    BuscaRequest,
+    BuscaResponse,
+    DiagnosticoColeta,
+    Empreendimento,
+    GrupoEmpreendimento,
+    ResumoBairro,
+)
 from scraper.chavesnamao import scrape_chavesnamao
 from scraper.imovelweb import scrape_imovelweb
 from scraper.mercadolivre import scrape_mercadolivre
@@ -16,7 +23,9 @@ from scraper.olximoveis import scrape_olximoveis
 from scraper.quintoandar import scrape_quintoandar
 from scraper.vivareal import scrape_vivareal
 from scraper.zapimoveis import scrape_zapimoveis
+from scraper.parser import completar_empreendimento, revisar_empreendimento_gravado
 from services import jobs
+from services.agrupamento import agrupar, mediana_por_empreendimento
 from services.bairros import registrar_bairros_vistos
 from services.deduplicador import deduplicar_cross_portal
 from services.geo import aplicar_centroide_bairro
@@ -155,6 +164,36 @@ def _resumir_por_bairro(
 
     resumos.sort(key=lambda r: -r.preco_m2_mediana)
     return resumos
+
+
+def aplicar_agrupamento(resposta: BuscaResponse) -> BuscaResponse:
+    """
+    Agrupa os anúncios da resposta por empreendimento, no lugar.
+
+    Roda sobre a resposta pronta (e não sobre os dicts da coleta) para valer
+    igual na busca nova e no cache: os dois caminhos montam `Empreendimento`,
+    e o cache gravado antes desta função existir também ganha os grupos.
+    """
+    itens = [e.model_dump() for e in resposta.empreendimentos]
+    # No cache, o nome gravado pode ser o título do anúncio (regra antiga de
+    # alguns portais) — e título agrupado como nome junta o bairro inteiro.
+    # Na busca nova isto não muda nada: o nome já saiu da regra atual.
+    for item in itens:
+        revisar_empreendimento_gravado(item)
+    resumos = agrupar(itens)
+    for emp, item in zip(resposta.empreendimentos, itens):
+        emp.grupo_id = item['grupo_id']
+        emp.nome_empreendimento = item['nome_empreendimento']
+        emp.eh_lancamento = item['eh_lancamento']
+    resposta.grupos = [GrupoEmpreendimento(**r) for r in resumos]
+    resposta.preco_m2_mediana_por_empreendimento = mediana_por_empreendimento(itens, resumos)
+    return resposta
+
+
+def completar_resposta_do_cache(resposta: BuscaResponse, request: BuscaRequest) -> BuscaResponse:
+    """O que a busca nova calcula e o banco não guarda: grupos e o recorte por bairro."""
+    resposta.por_bairro = _resumir_por_bairro(resposta.empreendimentos, request.lista_bairros)
+    return aplicar_agrupamento(resposta)
 
 
 async def executar_busca(
@@ -381,6 +420,11 @@ async def _executar_busca_interna(
         except Exception as e:
             logger.debug(f"Bairros vistos: não foi possível registrar: {e}")
 
+    # Nome do empreendimento e fase da obra com a mesma regra em todos os
+    # portais — é o sinal que agrupa a OLX, que não traz rua nem coordenada.
+    for item in raw_unicos:
+        completar_empreendimento(item)
+
     # Construir Empreendimentos
     empreendimentos: list[Empreendimento] = []
     for item in raw_unicos:
@@ -412,7 +456,7 @@ async def _executar_busca_interna(
         )
 
     precos_m2 = sorted(e.preco_m2 for e in empreendimentos)
-    return BuscaResponse(
+    return aplicar_agrupamento(BuscaResponse(
         por_bairro=_resumir_por_bairro(empreendimentos, bairros_filtro),
         total=len(empreendimentos),
         preco_m2_medio=round(sum(precos_m2) / len(precos_m2), 2),
@@ -424,4 +468,4 @@ async def _executar_busca_interna(
         tempo_coleta_segundos=tempo,
         diagnostico=diagnostico,
         sem_localizacao=sem_localizacao,
-    )
+    ))

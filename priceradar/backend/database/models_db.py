@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from database.connection import Base
@@ -40,6 +40,10 @@ class EmpreendimentoDB(Base):
     cidade              = Column(String, nullable=False, index=True)
     bairro              = Column(String, nullable=True)
     endereco            = Column(String, nullable=True)
+    cep                 = Column(String, nullable=True)
+    eh_lancamento       = Column(Boolean, nullable=True)
+    # Indexado: o dossiê do empreendimento busca no histórico inteiro por ele.
+    grupo_id            = Column(String, nullable=True, index=True)
     tipo_edificacao     = Column(String, nullable=True, index=True)
     latitude            = Column(Float, nullable=True)
     longitude           = Column(Float, nullable=True)

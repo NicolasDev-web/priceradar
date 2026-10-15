@@ -139,6 +139,10 @@ def _parse_oferta(oferta: dict, cidade_normalizada: str) -> dict | None:
         "construtora": extrair_construtora(titulo, anunciante),
         "cidade": cidade_normalizada,
         "bairro": endereco.get("addressLocality"),
+        # Campos padrão do PostalAddress; vazios quando o anúncio não publica.
+        # Rua e CEP são o que permite agrupar por prédio sem coordenada.
+        "endereco": str(endereco.get("streetAddress") or "").strip() or None,
+        "cep": str(endereco.get("postalCode") or "").strip() or None,
         "portal": "chavesnamao",
         "preco": preco,
         "area_m2": area,

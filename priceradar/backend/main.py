@@ -35,6 +35,7 @@ from models import (
     BuscaResponse,
     EvolucaoBairrosResponse,
     ExportRequest,
+    ProcurarEmpreendimentoRequest,
 )
 from repositories.busca_repo import (
     buscar_anterior,
@@ -53,9 +54,11 @@ from repositories.empreendimento_repo import (
 from services import jobs
 from services.bairros import listar_bairros
 from services.comparacao import comparar_com_anterior
+from services.dossie import montar_dossie, procurar_empreendimento
+from services.geocoding import geocodificar
 from services.evolucao import ler_lista_bairros, serie_por_bairro
 from services.export import gerar_excel
-from services.search import executar_busca
+from services.search import completar_resposta_do_cache, executar_busca
 from services.imagens import ImagemIndisponivel, obter_imagem, url_permitida
 from services.tiles import TileIndisponivel, coordenada_valida, obter_tile
 
@@ -130,6 +133,32 @@ async def tile_mapa(
                     headers={"Cache-Control": "private, max-age=604800"})
 
 
+async def _buscar_com_cache(
+    request: BuscaRequest, forcar: bool, job_id: str | None, db: AsyncSession
+) -> BuscaResponse:
+    """Cache → coleta → gravação. Compartilhado com a coleta direcionada da
+    busca por empreendimento, para as duas terem o mesmo cache e o mesmo histórico."""
+    logger.info(f"Busca: {request.cidade} R${request.preco_min}–{request.preco_max} q={request.quartos} forcar={forcar}")
+    preco_m2_mrv = await get_referencial_mrv(db, request.cidade, request.quartos)
+
+    # Cache: reaproveita uma busca idêntica recente, a menos que forcar=true
+    if not forcar:
+        cache = await buscar_cache_recente(db, request, CACHE_MINUTOS, preco_m2_mrv)
+        if cache is not None:
+            logger.info(f"Cache HIT: {cache.total} resultados reaproveitados")
+            cache.do_cache = True
+            completar_resposta_do_cache(cache, request)
+            # A mais recente É o cache; compara com a anterior a ela.
+            comparar_com_anterior(cache, await buscar_anterior(db, request, pular=1))
+            return cache
+
+    resultado = await executar_busca(request, preco_m2_mrv, job_id=job_id)
+    # Antes de gravar: senão a "anterior" seria esta mesma busca.
+    comparar_com_anterior(resultado, await buscar_anterior(db, request))
+    await salvar_busca(db, request, resultado)
+    return resultado
+
+
 @app.post("/api/buscar", response_model=BuscaResponse)
 async def buscar(
     request: BuscaRequest,
@@ -138,24 +167,7 @@ async def buscar(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        logger.info(f"Busca: {request.cidade} R${request.preco_min}–{request.preco_max} q={request.quartos} forcar={forcar}")
-        preco_m2_mrv = await get_referencial_mrv(db, request.cidade, request.quartos)
-
-        # Cache: reaproveita uma busca idêntica recente, a menos que forcar=true
-        if not forcar:
-            cache = await buscar_cache_recente(db, request, CACHE_MINUTOS, preco_m2_mrv)
-            if cache is not None:
-                logger.info(f"Cache HIT: {cache.total} resultados reaproveitados")
-                cache.do_cache = True
-                # A mais recente É o cache; compara com a anterior a ela.
-                comparar_com_anterior(cache, await buscar_anterior(db, request, pular=1))
-                return cache
-
-        resultado = await executar_busca(request, preco_m2_mrv, job_id=job_id)
-        # Antes de gravar: senão a "anterior" seria esta mesma busca.
-        comparar_com_anterior(resultado, await buscar_anterior(db, request))
-        await salvar_busca(db, request, resultado)
-        return resultado
+        return await _buscar_com_cache(request, forcar, job_id, db)
     except Exception as e:
         logger.error(f"Erro em /api/buscar: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -215,6 +227,56 @@ async def listar_bairros_da_cidade(cidade: str):
         return {"cidade": cidade, "bairros": []}
 
 
+# ── Empreendimentos ────────────────────────────────────────────────────────────
+
+@app.post("/api/empreendimentos/buscar")
+async def procurar_empreendimento_endpoint(
+    payload: ProcurarEmpreendimentoRequest, db: AsyncSession = Depends(get_db)
+):
+    """Anúncios de um empreendimento procurado por nome e/ou endereço."""
+    if not (payload.nome or "").strip() and not (payload.endereco or "").strip():
+        raise HTTPException(status_code=422, detail="Informe o nome ou o endereço do empreendimento.")
+    try:
+        # feita | sem_bairro | None (não pedida) — a tela precisa saber se a
+        # coleta rodou, senão "nada novo" parece resultado da coleta.
+        coleta = None
+        if payload.coletar:
+            bairro = payload.bairro
+            if not bairro and payload.endereco:
+                geo = await geocodificar(payload.endereco, payload.cidade)
+                bairro = (geo or {}).get("bairro")
+            # Sem bairro, a coleta seria a cidade inteira numa faixa de preço
+            # larga — muitas páginas para achar um prédio. Fica só o histórico.
+            if bairro:
+                await _buscar_com_cache(
+                    BuscaRequest(cidade=payload.cidade, preco_min=payload.preco_min,
+                                 preco_max=payload.preco_max, bairros=[bairro]),
+                    forcar=False, job_id=None, db=db,
+                )
+                coleta = "feita"
+            else:
+                coleta = "sem_bairro"
+        resposta = await procurar_empreendimento(
+            db, payload.cidade, payload.nome, payload.endereco, payload.raio_m, payload.bairro,
+        )
+        resposta["coleta"] = coleta
+        return resposta
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro em /api/empreendimentos/buscar: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/empreendimentos/{grupo_id}")
+async def dossie_empreendimento(grupo_id: str, cidade: str, db: AsyncSession = Depends(get_db)):
+    """Tudo o que o histórico sabe sobre um empreendimento agrupado numa busca."""
+    dossie = await montar_dossie(db, cidade, grupo_id)
+    if dossie is None:
+        raise HTTPException(status_code=404, detail="Empreendimento não encontrado no histórico")
+    return dossie
+
+
 # ── Histórico ──────────────────────────────────────────────────────────────────
 
 @app.get("/api/historico")
@@ -225,6 +287,11 @@ async def listar_historico(cidade: str | None = None, db: AsyncSession = Depends
             {
                 "id": b.id, "cidade": b.cidade, "preco_min": b.preco_min, "preco_max": b.preco_max,
                 "quartos": b.quartos, "total_encontrado": b.total_encontrado,
+                # Sem estes três, reabrir a busca do histórico fazia outra
+                # busca (sem bairro, sem filtro) e nunca casava com o cache.
+                # `bairro` é a chave gravada: bairros minúsculos separados por vírgula.
+                "bairros": b.bairro.split(",") if b.bairro else None,
+                "banheiros": b.banheiros, "tipo_edificacao": b.tipo_edificacao,
                 "preco_m2_medio": b.preco_m2_medio, "criado_em": b.criado_em.isoformat(),
             }
             for b in buscas

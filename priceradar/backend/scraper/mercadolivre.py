@@ -93,7 +93,7 @@ def _parse_html(html: str, cidade_normalizada: str, preco_min: float, preco_max:
                 resultados.append({
                     "id": str(uuid.uuid4()),
                     "nome_anuncio": nome,
-                    "nome_empreendimento": nome,
+                    "nome_empreendimento": None,  # o título não é nome; ver parser.completar_empreendimento
                     "construtora": extrair_construtora(nome, None),
                     "cidade": cidade_normalizada,
                     "bairro": bairro,
@@ -142,7 +142,7 @@ def _parse_html(html: str, cidade_normalizada: str, preco_min: float, preco_max:
             resultados.append({
                 "id": str(uuid.uuid4()),
                 "nome_anuncio": nome,
-                "nome_empreendimento": nome,
+                "nome_empreendimento": None,  # o título não é nome; ver parser.completar_empreendimento
                 "construtora": extrair_construtora(nome, None),
                 "cidade": cidade_normalizada,
                 "bairro": None,
@@ -194,7 +194,7 @@ def _extrair_de_api_ml(data: Any, cidade_normalizada: str, preco_min: float, pre
             resultados.append({
                 "id": str(uuid.uuid4()),
                 "nome_anuncio": titulo,
-                "nome_empreendimento": titulo,
+                "nome_empreendimento": None,  # o título não é nome; ver parser.completar_empreendimento
                 "construtora": extrair_construtora(titulo, None),
                 "cidade": cidade_normalizada,
                 "bairro": bairro,

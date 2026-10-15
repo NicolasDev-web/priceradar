@@ -59,3 +59,13 @@ async def _migrar_colunas(conn):
         await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN origem_coordenada VARCHAR"))
     if "fotos" not in colunas_emp:
         await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN fotos TEXT"))
+    if "cep" not in colunas_emp:
+        await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN cep VARCHAR"))
+    if "eh_lancamento" not in colunas_emp:
+        await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN eh_lancamento BOOLEAN"))
+    if "grupo_id" not in colunas_emp:
+        await conn.execute(text("ALTER TABLE empreendimentos ADD COLUMN grupo_id VARCHAR"))
+    # create_all não cria índice em tabela que já existia.
+    await conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_empreendimentos_grupo_id ON empreendimentos (grupo_id)"
+    ))

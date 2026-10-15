@@ -359,6 +359,61 @@ _RE_INICIO_GENERICO = re.compile(
 )
 
 
+# O regex de empreendimento captura até 45 caracteres depois do prefixo, e a
+# frase continua: "Condomínio Vidal Vasconcelos oferece segurança",
+# "Edifício Beach Class Unique localizado Meireles". O nome termina na primeira
+# palavra que já é a frase seguindo — verbo ou conector.
+_FIM_DO_NOME = frozenset({
+    'oferece', 'oferecendo', 'localizado', 'localizada', 'situado', 'situada',
+    'possui', 'conta', 'fica', 'proximo', 'perto', 'com', 'no', 'na', 'em', 'que',
+    'para', 'ao', 'onde', 'apartamento', 'apto', 'unidade', 'venda', 'andar',
+    'quartos', 'nascente', 'frente', 'excelente', 'otimo', 'lindo',
+})
+
+# Palavras de chamada comercial: o trecho depois do prefixo é slogan, não nome.
+# "CONDOMÍNIO MAIS ACOLHEDOR DO MEIRELES", "Condomínio Clube", "Condomínio
+# FECHADO". Um nome legítimo com uma delas se perde — melhor vazio que errado.
+_PALAVRAS_SLOGAN = frozenset({
+    'mais', 'melhor', 'acolhedor', 'completo', 'exclusivo', 'incrivel', 'perfeito',
+    'privilegiado', 'privilegiada', 'fechado', 'clube', 'lazer', 'seguro', 'tranquilo',
+    'moderno', 'novo', 'nova', 'otima', 'linda', 'top',
+})
+
+# Palavra em caixa alta grudada na seguinte: "MEIRELESLocalizado" vira
+# "MEIRELES Localizado". Acontece quando o portal junta título e corpo.
+_RE_GRUDADO = re.compile(r'([A-ZÀ-Ú]{2,})([A-ZÀ-Ú][a-zà-ú])')
+_RE_NUMERO_SOLTO = re.compile(r'^\d+(?:[/,.]\d+)?(?:m|m2|m²)?$')
+
+_PREFIXOS_NOME = frozenset({
+    'residencial', 'cond', 'condominio', 'edificio', 'torre', 'village', 'villa',
+})
+
+
+def _cortar_nome(nome: str) -> str | None:
+    """Corta o nome na frase que continua depois dele e recusa slogan."""
+    nome = _RE_GRUDADO.sub(r'\1 \2', nome)
+    palavras = nome.split()
+    if not palavras:
+        return None
+
+    # O prefixo ("Residencial", "Cond.") não conta como palavra do nome.
+    inicio = 1 if normalizar_cidade(palavras[0]).rstrip('.') in _PREFIXOS_NOME else 0
+    corte = len(palavras)
+    for i in range(inicio + 1, len(palavras)):
+        palavra = normalizar_cidade(palavras[i]).strip('.,')
+        # Número solto já é a frase seguindo: "Reserva Arvoredo 02 Quartos",
+        # "Villa Venezia 3/4", "Villa Venezia 65 m²".
+        if palavra in _FIM_DO_NOME or _RE_NUMERO_SOLTO.match(palavra):
+            corte = i
+            break
+    palavras = palavras[:corte]
+
+    resto = [normalizar_cidade(p).strip('.,') for p in palavras[inicio:]]
+    if not resto or any(p in _PALAVRAS_SLOGAN for p in resto):
+        return None
+    return ' '.join(palavras)
+
+
 def extrair_nome_empreendimento(descricao: str | None) -> str | None:
     """
     Extrai o nome do empreendimento da descrição.
@@ -395,7 +450,8 @@ def extrair_nome_empreendimento(descricao: str | None) -> str | None:
         # Remove newlines embutidas (o character class [A-Za-z0-9 \t] não permite \n,
         # mas a limpeza pós-match garante em caso de edge case)
         nome = nome.replace('\n', ' ').strip()
-        if 5 < len(nome) < 80:
+        nome = _cortar_nome(nome)
+        if nome and 5 < len(nome) < 80:
             return nome
 
     # Sem padrão explícito de empreendimento, devolve None.
@@ -408,6 +464,112 @@ def extrair_nome_empreendimento(descricao: str | None) -> str | None:
     # Melhor vazio que errado: o comercial consegue trabalhar com uma célula
     # em branco, não com um nome inventado.
     return None
+
+
+# ── Lançamentos ──────────────────────────────────────────────────────────────
+#
+# Os três portais que publicam lançamento põem o NOME DO EMPREENDIMENTO no slug
+# da URL, em vez da descrição do imóvel que os anúncios comuns usam:
+#
+#   vivareal.com.br/imoveis-lancamentos/monte-roraima-id-2864813095/
+#   zapimoveis.com.br/lancamentos/villa-lobos-id-2889406440/
+#   chavesnamao.com.br/lancamento/lancamento-mood-guararapes/id-45658693/
+#
+# É o nome mais confiável que a coleta consegue sem requisição nova — escrito
+# pelo portal, não garimpado de texto livre.
+_RE_SLUG_LANCAMENTO = re.compile(
+    r'/(?:imoveis-lancamentos?|lancamentos?)/(?P<slug>[a-z0-9-]+?)-?(?:-id-\d+)?/(?:id-\d+/)?$',
+    re.IGNORECASE,
+)
+# Cauda de marketing no slug: "wind-no-meireles-powered-by-porsche-consulting".
+_SLUG_FIM_DO_NOME = frozenset({'no', 'na', 'em', 'powered', 'by', 'com', 'apartamento', 'apartamentos'})
+
+# Texto que declara a fase da obra. Ausência de declaração não é evidência de
+# nada — o anúncio fica `None` (sem selo), como no torre × bloco.
+_RE_TEXTO_LANCAMENTO = re.compile(
+    r'\b(lan[çc]amento|na planta|previs[ãa]o de entrega|entrega prevista|em constru[çc][ãa]o)\b',
+    re.IGNORECASE,
+)
+_RE_TEXTO_PRONTO = re.compile(
+    r'\b(pronto para morar|reformad[oa]|usad[oa]|habite-se|mobiliad[oa])\b',
+    re.IGNORECASE,
+)
+
+
+def extrair_nome_do_slug_lancamento(url: str | None) -> str | None:
+    """Nome do empreendimento no slug de uma URL de lançamento, ou None."""
+    caminho = (url or '').split('?')[0].split('#')[0].rstrip('/') + '/'
+    m = _RE_SLUG_LANCAMENTO.search(caminho)
+    if not m:
+        return None
+    tokens = [t for t in m.group('slug').lower().split('-') if t]
+    # ChavesNaMão repete a categoria: "lancamento-mood-guararapes".
+    while tokens and tokens[0] in ('lancamento', 'lancamentos'):
+        tokens.pop(0)
+    nome: list[str] = []
+    for t in tokens:
+        if t in _SLUG_FIM_DO_NOME and nome:
+            break
+        nome.append(t)
+    texto = ' '.join(nome).title()
+    return texto if 2 < len(texto) < 60 else None
+
+
+def eh_anuncio_lancamento(url: str | None, texto: str | None) -> bool | None:
+    """
+    True = lançamento declarado; False = imóvel pronto declarado; None = não diz.
+
+    A URL de lançamento é a evidência mais forte; depois, o texto. Texto que
+    fala nos dois ("lançamento" e "pronto para morar") conta como lançamento
+    recém-entregue.
+    """
+    if extrair_nome_do_slug_lancamento(url):
+        return True
+    conteudo = texto or ''
+    if _RE_TEXTO_LANCAMENTO.search(conteudo):
+        return True
+    if _RE_TEXTO_PRONTO.search(conteudo):
+        return False
+    return None
+
+
+def completar_empreendimento(registro: dict, texto: str | None = None) -> dict:
+    """
+    Preenche `nome_empreendimento` e `eh_lancamento` a partir do que o anúncio
+    já tem — chamado por todo scraper no fim do parse, para que a regra seja a
+    mesma em todos os portais.
+
+    Ordem de confiança do nome: slug de lançamento (escrito pelo portal) >
+    o que o scraper já extraiu > padrão explícito no título/descrição. Nunca
+    copia o título: título é "Apartamento 2 quartos no Cocó", não um nome.
+    """
+    url = registro.get('url_anuncio')
+    conteudo = texto if texto is not None else f"{registro.get('nome_anuncio') or ''}\n{registro.get('descricao') or ''}"
+    nome = extrair_nome_do_slug_lancamento(url) or registro.get('nome_empreendimento')
+    if nome and nome == registro.get('nome_anuncio'):
+        nome = None
+    registro['nome_empreendimento'] = nome or extrair_nome_empreendimento(conteudo)
+    registro['eh_lancamento'] = eh_anuncio_lancamento(url, conteudo)
+    return registro
+
+
+def revisar_empreendimento_gravado(registro: dict) -> dict:
+    """
+    `completar_empreendimento` para anúncio que veio do BANCO.
+
+    O nome gravado foi extraído pela regra de quando a busca rodou: em alguns
+    portais era o título inteiro ("Apartamento com 3 dormitórios à venda… -
+    Meireles - Fortaleza/CE"), em outros vinha com a frase seguinte colada
+    ("… localizado Meireles"). Título vira None; o resto passa de novo pela
+    extração, que corta a sobra sem perder o nome que veio da descrição
+    completa (o banco só guarda 300 caracteres dela).
+    """
+    gravado = registro.get('nome_empreendimento')
+    if gravado and gravado != registro.get('nome_anuncio'):
+        registro['nome_empreendimento'] = extrair_nome_empreendimento(gravado)
+    else:
+        registro['nome_empreendimento'] = None
+    return completar_empreendimento(registro)
 
 
 # ── Fotos ────────────────────────────────────────────────────────────────────

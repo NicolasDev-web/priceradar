@@ -108,7 +108,7 @@ def _parse_house(house: dict, cidade_normalizada: str, preco_min: float, preco_m
         return {
             "id": str(uuid.uuid4()),
             "nome_anuncio": nome,
-            "nome_empreendimento": nome,
+            "nome_empreendimento": None,  # o título não é nome; ver parser.completar_empreendimento
             "construtora": None,
             "cidade": cidade_normalizada,
             "bairro": bairro,

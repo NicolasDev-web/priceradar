@@ -272,3 +272,42 @@ def test_indice_vazio_nao_toca_em_nada():
     item = {"url_anuncio": URL_COCO, "bairro": "Coco"}
     aplicar_localizacao(item, {})
     assert item == {"url_anuncio": URL_COCO, "bairro": "Coco"}
+
+
+# --------------------------------------------------------------------------
+# Rua, número e CEP — base do agrupamento por prédio
+# --------------------------------------------------------------------------
+
+def test_rua_e_numero_do_payload_real(indice):
+    assert indice[chave_url(URL_COCO)]["rua"] == "Rua Andrade Furtado"
+    assert indice[chave_url(URL_COCO)]["numero"] == "1100"
+    assert indice[chave_url(URL_PASSARE)]["numero"] == "333"
+
+
+def test_aplicar_grava_endereco_com_numero(indice):
+    item = {"url_anuncio": URL_COCO, "endereco": "Rua Andrade Furtado"}
+    aplicar_localizacao(item, indice)
+    assert item["endereco"] == "Rua Andrade Furtado, 1100"
+
+
+def test_sem_numero_mantem_o_endereco_do_json_ld():
+    bloco = _COCO.replace('"streetNumber":"1100",', '"streetNumber":"$undefined",')
+    indice = indexar_localizacoes(montar_html(bloco))
+    assert indice[chave_url(URL_COCO)]["numero"] is None
+    item = {"url_anuncio": URL_COCO, "endereco": "Rua Andrade Furtado"}
+    aplicar_localizacao(item, indice)
+    assert item["endereco"] == "Rua Andrade Furtado"
+
+
+def test_cep_quando_vem():
+    bloco = _COCO.replace('"streetNumber":"1100",', '"streetNumber":"1100","zipCode":"60192-070",')
+    indice = indexar_localizacoes(montar_html(bloco))
+    item = {"url_anuncio": URL_COCO}
+    aplicar_localizacao(item, indice)
+    assert item["cep"] == "60192-070"
+
+
+def test_numero_zero_nao_identifica_predio():
+    bloco = _COCO.replace('"streetNumber":"1100"', '"streetNumber":"0"')
+    indice = indexar_localizacoes(montar_html(bloco))
+    assert indice[chave_url(URL_COCO)]["numero"] is None

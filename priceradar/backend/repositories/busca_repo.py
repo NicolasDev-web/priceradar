@@ -67,6 +67,9 @@ async def salvar_busca(db: AsyncSession, busca: BuscaRequest, resultado: BuscaRe
             cidade=emp.cidade,
             bairro=emp.bairro,
             endereco=emp.endereco,
+            cep=emp.cep,
+            eh_lancamento=emp.eh_lancamento,
+            grupo_id=emp.grupo_id,
             tipo_edificacao=emp.tipo_edificacao,
             latitude=emp.latitude,
             longitude=emp.longitude,
@@ -157,6 +160,9 @@ async def buscar_cache_recente(
             cidade=e.cidade,
             bairro=e.bairro,
             endereco=e.endereco,
+            cep=e.cep,
+            eh_lancamento=e.eh_lancamento,
+            grupo_id=e.grupo_id,
             tipo_edificacao=e.tipo_edificacao,
             # Sem estes três o cache hit devolveria um mapa vazio enquanto a
             # busca fresca mostra os pinos — a mesma pergunta com duas respostas.

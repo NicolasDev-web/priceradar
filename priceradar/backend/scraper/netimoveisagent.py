@@ -78,7 +78,7 @@ def _parse_json_ld(html: str, cidade_normalizada: str, preco_min: float, preco_m
                 resultados.append({
                     "id": str(uuid.uuid4()),
                     "nome_anuncio": nome,
-                    "nome_empreendimento": extrair_nome_empreendimento(descricao_full) or nome,
+                    "nome_empreendimento": extrair_nome_empreendimento(descricao_full),
                     "construtora": extrair_construtora(nome, descricao_full),
                     "cidade": cidade_normalizada,
                     "bairro": bairro,
@@ -142,7 +142,7 @@ def _extrair_de_json_api(data: Any, cidade_normalizada: str, preco_min: float, p
             resultados.append({
                 "id": str(uuid.uuid4()),
                 "nome_anuncio": titulo,
-                "nome_empreendimento": titulo,
+                "nome_empreendimento": None,  # o título não é nome; ver parser.completar_empreendimento
                 "construtora": extrair_construtora(titulo, None),
                 "cidade": cidade_normalizada,
                 "bairro": item.get("bairro") or item.get("neighborhood") or item.get("endereco", {}).get("bairro"),
@@ -205,7 +205,7 @@ def _parse_initial_state(html: str, cidade_normalizada: str, preco_min: float, p
                 resultados.append({
                     "id": str(uuid.uuid4()),
                     "nome_anuncio": titulo,
-                    "nome_empreendimento": titulo,
+                    "nome_empreendimento": None,  # o título não é nome; ver parser.completar_empreendimento
                     "construtora": extrair_construtora(titulo, None),
                     "cidade": cidade_normalizada,
                     "bairro": item.get("bairro") or item.get("neighborhood"),

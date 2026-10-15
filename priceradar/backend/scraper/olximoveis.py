@@ -270,7 +270,7 @@ def _parse_ad_rsc(ad: dict, cidade_normalizada: str, bairro: str | None) -> dict
         return {
             "id": str(uuid.uuid4()),
             "nome_anuncio": nome,
-            "nome_empreendimento": nome,
+            "nome_empreendimento": None,  # o título não é nome; ver parser.completar_empreendimento
             "construtora": extrair_construtora(nome, descricao),
             "cidade": cidade_normalizada,
             "bairro": bairro,
@@ -378,7 +378,7 @@ def parse_olx_html(
             resultados.append({
                 'id': str(uuid.uuid4()),
                 'nome_anuncio': nome_anuncio,
-                'nome_empreendimento': nome_anuncio,
+                'nome_empreendimento': None,  # o título não é nome; ver parser.completar_empreendimento
                 'construtora': construtora,
                 'cidade': cidade_normalizada,
                 'bairro': bairro,

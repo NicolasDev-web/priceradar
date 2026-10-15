@@ -13,6 +13,14 @@ class Empreendimento(BaseModel):
     # Logradouro. Vem separado do bairro porque o JSON-LD dos portais traz os
     # dois em campos distintos e misturá-los quebrava o filtro de bairro.
     endereco: str | None = None
+    cep: str | None = None
+    # True = lançamento declarado (URL de lançamento ou "na planta"); False =
+    # pronto declarado; None = o anúncio não diz. Ver parser.eh_anuncio_lancamento.
+    eh_lancamento: bool | None = None
+    # Empreendimento (prédio/condomínio) ao qual o anúncio pertence — mesmo id
+    # entre buscas. None = não foi possível ligar a nenhum outro anúncio.
+    # Ver services/agrupamento.py.
+    grupo_id: str | None = None
     # torre | provavel_bloco | indefinido. Ver classificar_edificacao() em
     # scraper/parser.py — 'indefinido' é ausência de dado, não de elevador.
     tipo_edificacao: str | None = None
@@ -66,6 +74,45 @@ class ResumoBairro(BaseModel):
     preco_m2_medio: float
     preco_m2_min: float
     preco_m2_max: float
+
+
+class GrupoEmpreendimento(BaseModel):
+    """
+    Um empreendimento (prédio/condomínio) e o preço dos anúncios dele.
+
+    Montado por services/agrupamento.py. As estatísticas são por UNIDADE: a
+    mesma unidade anunciada por dois corretores conta uma vez.
+    """
+    grupo_id: str
+    # Chave legível que gerou o id ("end:fortaleza|rua x|1000") — para depurar
+    # e para o dossiê explicar por que estes anúncios estão juntos.
+    chave: str
+    nome: str | None = None
+    endereco: str | None = None
+    bairro: str | None = None
+    cidade: str
+    construtora: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    n_anuncios: int
+    n_unidades: int
+    preco_m2_mediana: float
+    preco_m2_medio: float
+    preco_m2_min: float
+    preco_m2_max: float
+    area_min: float | None = None
+    area_max: float | None = None
+    preco_min: float | None = None
+    preco_max: float | None = None
+    quartos: list[int] = []
+    portais: list[str] = []
+    eh_lancamento: bool | None = None
+    # alta: endereço com número ou coordenada exata ligaram os anúncios.
+    # media: só o nome — dois "Residencial Jardins" no mesmo bairro existem.
+    confianca: str
+    # Regras que uniram: endereco | coordenada | nome.
+    sinais: list[str] = []
+    foto: str | None = None
 
 
 class DiagnosticoColeta(BaseModel):
@@ -190,6 +237,40 @@ class BuscaResponse(BaseModel):
     # mapa com menos pinos que a lista parece defeito.
     sem_localizacao: int = 0
     comparacao: ComparacaoBusca | None = None
+    # Empreendimentos com 2+ anúncios nesta busca, do maior para o menor.
+    grupos: list[GrupoEmpreendimento] = []
+    # Mediana em que cada prédio conta uma vez (anúncio sem grupo conta como
+    # um prédio). Um condomínio com 20 anúncios não decide o número da cidade.
+    preco_m2_mediana_por_empreendimento: float | None = None
+
+
+class ProcurarEmpreendimentoRequest(BaseModel):
+    """Busca de um empreendimento específico, por nome e/ou endereço."""
+    cidade: str
+    nome: str | None = None
+    endereco: str | None = None
+    # Ajuda a desempatar nome repetido em bairros diferentes, e é o bairro da
+    # coleta direcionada quando o geocoder não devolve um.
+    bairro: str | None = None
+    # Distância máxima entre o ponto geocodificado e a coordenada do anúncio.
+    raio_m: float = 60.0
+    # True: antes de procurar no histórico, roda uma busca normal no bairro do
+    # empreendimento (mesmo volume de requisições de uma busca do formulário,
+    # passando pelo cache). False: só o histórico — resposta instantânea.
+    coletar: bool = False
+    preco_min: float = 100_000
+    preco_max: float = 3_000_000
+
+    @field_validator("cidade")
+    @classmethod
+    def exigir_estado(cls, v: str) -> str:
+        return BuscaRequest.exigir_estado(v)
+
+    @field_validator("raio_m")
+    @classmethod
+    def raio_razoavel(cls, v: float) -> float:
+        # Acima de ~200 m já são outros prédios; abaixo de 15 m o geocoder erra mais que isso.
+        return min(max(v, 15.0), 200.0)
 
 
 class ExportRequest(BaseModel):

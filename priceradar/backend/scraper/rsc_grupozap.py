@@ -63,6 +63,16 @@ _ANUNCIO = re.compile(
     re.S,
 )
 
+# Rua, número e CEP ficam dentro do trecho que `_ANUNCIO` já casou (o objeto
+# `address` do anúncio). Lidos à parte, e não como grupos de `_ANUNCIO`, porque a
+# ordem dos campos dentro de `address` não é garantida e nenhum deles é
+# obrigatório: um grupo opcional a mais no regex principal mudaria o que casa.
+# Rua + número é o que identifica o prédio — base do agrupamento por
+# empreendimento (services/agrupamento.py).
+_RUA = re.compile(r'"street":"([^"]+)"')
+_NUMERO = re.compile(r'"streetNumber":"([^"]+)"')
+_CEP = re.compile(r'"zipCode":"(\d{5}-?\d{3})"')
+
 # Fortaleza fica em -3.7, -38.5; Salvador em -12.9, -38.5. O Brasil inteiro
 # cabe nesta caixa. Serve para barrar (0,0) e coordenada de outro país, que
 # apareceriam no mapa como um pin no Golfo da Guiné.
@@ -104,17 +114,42 @@ def indexar_localizacoes(html: str) -> dict[str, dict]:
                 continue
 
             bairro = (m.group("bairro") or "").strip()
+            trecho = m.group(0)
             indice[chave_url(m.group("href"))] = {
                 "latitude": lat,
                 "longitude": lng,
                 "bairro": bairro or None,
                 # O portal declara quando o pin é do bairro e não do endereço.
                 "aproximada": m.group("aproximada") == "true",
+                "rua": _primeiro(_RUA, trecho),
+                "numero": _numero_valido(_primeiro(_NUMERO, trecho)),
+                "cep": _primeiro(_CEP, trecho),
             }
         return indice
     except Exception as e:  # o formato não é documentado; degradar é a regra
         logger.warning(f"RSC Grupo ZAP: não foi possível indexar localizações: {e}")
         return {}
+
+
+def _primeiro(padrao: re.Pattern, texto: str) -> str | None:
+    m = padrao.search(texto)
+    valor = m.group(1).strip() if m else ""
+    # "$undefined" é como o RSC serializa campo ausente.
+    return valor if valor and not valor.startswith("$") else None
+
+
+def _numero_valido(numero: str | None) -> str | None:
+    """Número de porta só vale se tiver dígito: "S/N" e "0" não identificam prédio."""
+    if not numero or not any(c.isdigit() for c in numero) or numero.strip("0") == "":
+        return None
+    return numero
+
+
+def montar_endereco(rua: str | None, numero: str | None) -> str | None:
+    """"Rua X, 1000" — o formato que `services/agrupamento.normalizar_rua` separa."""
+    if not rua:
+        return None
+    return f"{rua}, {numero}" if numero else rua
 
 
 def aplicar_localizacao(item: dict, indice: dict[str, dict]) -> None:
@@ -134,3 +169,10 @@ def aplicar_localizacao(item: dict, indice: dict[str, dict]) -> None:
     item["origem_coordenada"] = "aproximada_portal" if loc["aproximada"] else "exata"
     if loc["bairro"]:
         item["bairro"] = loc["bairro"]
+    # O JSON-LD traz a rua sem número; o RSC traz os dois. Só substitui quando
+    # tem algo melhor — rua sem número não ganha de rua sem número.
+    endereco = montar_endereco(loc.get("rua"), loc.get("numero"))
+    if endereco and (loc.get("numero") or not item.get("endereco")):
+        item["endereco"] = endereco
+    if loc.get("cep"):
+        item["cep"] = loc["cep"]
