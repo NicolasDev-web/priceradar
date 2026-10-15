@@ -6,6 +6,7 @@ rodadas de protótipo):
     INICIO    índice das abas e o que foi buscado
     RESUMO    indicadores + ranking de bairros — a resposta em uma página
     BAIRROS   uma linha por bairro, recalculada a partir de ANUNCIOS
+    EMPREENDIMENTOS  uma linha por prédio (2+ anúncios), ver services/agrupamento
     ANUNCIOS  base: um anúncio por linha, tabela do Excel, rola como planilha comum
     CONFIG    únicas células editáveis: faixa (±10%) e referencial MRV
 
@@ -40,6 +41,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from models import Empreendimento
+from services.agrupamento import agrupar
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +99,7 @@ _ROTULO_ORIGEM = {
 # Base de anúncios: (cabeçalho, largura, formato, alinhamento). Larguras com
 # folga para o maior valor formatado na fonte do Excel Windows.
 COLUNAS = [
-    ("Empreendimento", 36, None, ESQ), ("Bairro", 18, None, ESQ), ("Construtora", 17, None, ESQ),
+    ("Empreendimento", 36, None, ESQ), ("Prédio", 30, None, ESQ), ("Bairro", 18, None, ESQ), ("Construtora", 17, None, ESQ),
     ("Portal", 15, None, ESQ), ("Quartos", 10, "0", DIR), ("Banheiros", 11, "0", DIR), ("Vagas", 9, "0", DIR),
     ("Área", 11, FMT_M2, DIR), ("Preço", 17, FMT_RS, DIR), ("Preço/m²", 19, FMT_RS_M2, DIR),
     ("vs. média", 13, FMT_PCT, DIR), ("Posição", 16, None, ESQ), ("vs. MRV", 12, FMT_PCT, DIR),
@@ -145,6 +147,24 @@ def _cabecalho(ws, linha: int, colunas: list[tuple[str, str, Alignment]]) -> Non
     ws.row_dimensions[linha].height = 30
 
 
+# Por que os anúncios do prédio estão juntos — dito em português na planilha.
+_ROTULO_SINAL = {"endereco": "endereço", "coordenada": "ponto no mapa", "nome": "nome"}
+
+
+def _rotulos_grupos(resumos: list[dict]) -> dict[str, str]:
+    """
+    grupo_id → rótulo do prédio, único na planilha (é a chave do COUNTIF).
+    Nome quando há, senão o endereço; repetido ganha "(2)", "(3)".
+    """
+    rotulos: dict[str, str] = {}
+    usados: dict[str, int] = {}
+    for r in resumos:
+        base = r["nome"] or r["endereco"] or f"Prédio no {r['bairro'] or SEM_BAIRRO}"
+        usados[base] = usados.get(base, 0) + 1
+        rotulos[r["grupo_id"]] = base if usados[base] == 1 else f"{base} ({usados[base]})"
+    return rotulos
+
+
 def _descrever_busca(ctx: dict) -> str:
     partes = []
     if ctx.get("quartos"):
@@ -186,8 +206,14 @@ def gerar_excel(
     emps = sorted(empreendimentos, key=lambda e: e.preco_m2)
     n = len(emps)
 
+    # Prédio de cada anúncio: o mesmo agrupamento da tela (services/agrupamento).
+    itens = [e.model_dump() for e in emps]
+    resumos = agrupar(itens)
+    rotulo_grupo = _rotulos_grupos(resumos)
+    predio_de = [rotulo_grupo.get(i["grupo_id"] or "", "") for i in itens]
+
     wb = Workbook()
-    nomes = ["INICIO", "RESUMO", "BAIRROS", "ANUNCIOS", "CONFIG"]
+    nomes = ["INICIO", "RESUMO", "BAIRROS", "EMPREENDIMENTOS", "ANUNCIOS", "CONFIG"]
     abas = {nome: (wb.active if i == 0 else wb.create_sheet()) for i, nome in enumerate(nomes)}
     for nome, ws in abas.items():
         ws.title = nome
@@ -238,6 +264,7 @@ def gerar_excel(
         pm2, vm = COL["Preço/m²"], COL["vs. média"]
         vals = {
             "Empreendimento": e.nome_empreendimento or e.nome_anuncio,
+            "Prédio": predio_de[r - p1],
             "Bairro": e.bairro or SEM_BAIRRO,
             "Construtora": e.construtora or "",
             "Portal": PORTAL_LABEL.get(e.portal, e.portal),
@@ -319,6 +346,65 @@ def gerar_excel(
     tb.tableStyleInfo = TableStyleInfo(name="TableStyleLight1", showRowStripes=True)
     bai.add_table(tb)
 
+    # ═════════════ EMPREENDIMENTOS ═════════════
+    # Um prédio por linha. Contagem e média são fórmula sobre a coluna Prédio
+    # da base (acompanham edições); a mediana é por UNIDADE — a mesma unidade
+    # anunciada duas vezes conta uma —, o que fórmula simples não faz, então
+    # vai como valor do momento da exportação, e a nota diz isso.
+    emp_ws = abas["EMPREENDIMENTOS"]
+    cols_emp = [("A", "Prédio", 32, ESQ), ("B", "Endereço", 30, ESQ), ("C", "Bairro", 18, ESQ),
+                ("D", "Anúncios", 11, DIR), ("E", "Unidades", 11, DIR), ("F", "Preço/m² mediano", 19, DIR),
+                ("G", "Preço/m² médio", 19, DIR), ("H", "vs. média", 12, DIR), ("I", "Posição", 15, ESQ),
+                ("J", "vs. MRV", 11, DIR), ("K", "Área", 14, ESQ), ("L", "Portais", 22, ESQ),
+                ("M", "Agrupado por", 24, ESQ)]
+    for letra, _, larg, _ in cols_emp:
+        emp_ws.column_dimensions[letra].width = larg
+    _impressao(emp_ws)
+    _cabecalho(emp_ws, 1, [(letra, texto, al) for letra, texto, _, al in cols_emp])
+    ordem = sorted(resumos, key=lambda g: -g["preco_m2_mediana"])
+    e1, en = 2, max(2, 1 + len(ordem))
+    for r, g in enumerate(ordem, start=e1):
+        area = ""
+        if g["area_min"] is not None:
+            a0, a1 = round(g["area_min"]), round(g["area_max"])
+            area = f"{a0} m²" if a0 == a1 else f"{a0}–{a1} m²"
+        linha = [
+            ("A", rotulo_grupo[g["grupo_id"]], None), ("B", g["endereco"] or "", None),
+            ("C", g["bairro"] or SEM_BAIRRO, None),
+            ("D", f"=COUNTIF({rng('Prédio')},A{r})", "0"), ("E", g["n_unidades"], "0"),
+            ("F", g["preco_m2_mediana"], FMT_RS_M2),
+            ("G", f"=AVERAGEIF({rng('Prédio')},A{r},{rng('Preço/m²')})", FMT_RS_M2),
+            ("H", f"=G{r}/MEDIA-1", FMT_PCT),
+            ("I", f'=IF(H{r}<-FAIXA,"▼ Abaixo",IF(H{r}>FAIXA,"▲ Acima","● Na média"))', None),
+            ("J", f'=IF(REF_MRV>0,G{r}/REF_MRV-1,"")', FMT_PCT),
+            ("K", area, None),
+            ("L", ", ".join(PORTAL_LABEL.get(x, x) for x in g["portais"]), None),
+            ("M", " + ".join(_ROTULO_SINAL.get(x, x) for x in g["sinais"])
+                  + ("" if g["confianca"] == "alta" else " (confira)"), None),
+        ]
+        for (letra, v, fmt), (_, _, _, al) in zip(linha, cols_emp):
+            c = emp_ws[f"{letra}{r}"]
+            c.value, c.font, c.alignment = v, F_TXT, al
+            if fmt:
+                c.number_format = fmt
+    if not ordem:
+        emp_ws["A2"], emp_ws["A2"].font = "Nenhum prédio com 2 ou mais anúncios nesta busca.", F_SUB
+    for regra, cf, ct in (("$H2<-FAIXA", VERDE_CLARO, VERDE_ESCURO), ("$H2>FAIXA", LARANJA_CLARO, LARANJA_TXT)):
+        emp_ws.conditional_formatting.add(f"G2:I{en}", FormulaRule(formula=[regra], fill=_fill(cf),
+                                                                   font=Font(bold=True, color=ct)))
+    te = Table(displayName="tblEmpreendimentos", ref=f"A1:M{en}")
+    te.tableStyleInfo = TableStyleInfo(name="TableStyleLight1", showRowStripes=True)
+    emp_ws.add_table(te)
+    emp_ws.freeze_panes = "A2"
+    nota = en + 2
+    for k, txt in enumerate([
+        "Anúncios do mesmo prédio juntos pelo endereço com número, pelo ponto no mapa publicado pelo portal "
+        "ou pelo nome do empreendimento. \"(confira)\": só o nome liga os anúncios.",
+        "Preço/m² mediano: por unidade (a mesma unidade anunciada duas vezes conta uma), calculado na exportação. "
+        "As demais colunas recalculam a partir da aba Anúncios.",
+    ], start=nota):
+        emp_ws[f"A{k}"], emp_ws[f"A{k}"].font = txt, F_SUB
+
     # ═════════════ RESUMO ═════════════
     res = abas["RESUMO"]
     _pagina(res, f"Preço de mercado — {cidade}",
@@ -395,6 +481,7 @@ def gerar_excel(
     for r, (aba, rot, desc) in enumerate([
         ("RESUMO", "Resumo", "Comece aqui: preço/m² médio e mediano, comparação com a MRV e ranking de bairros."),
         ("BAIRROS", "Por bairro", "Quantidade, preço/m² médio e posição de cada bairro."),
+        ("EMPREENDIMENTOS", "Por prédio", "Anúncios do mesmo prédio juntos: preço/m² de cada empreendimento."),
         ("ANUNCIOS", "Anúncios", "Base completa: um anúncio por linha, com filtro, link e foto."),
         ("CONFIG", "Configurações", "Faixa de ±10% e referencial MRV. Única aba para editar."),
     ], start=6):
@@ -406,7 +493,7 @@ def gerar_excel(
         ini.row_dimensions[r].height = 20
     _cabecalho(ini, 12, [("B", "Busca", ESQ), ("C", "", ESQ)])
     info = [("Cidade", cidade), ("Filtros", busca), ("Coletado em", f"{coleta:%d/%m/%Y %H:%M}"),
-            ("Anúncios", str(n))]
+            ("Anúncios", str(n)), ("Prédios com 2+ anúncios", str(len(resumos)))]
     if ctx.get("fontes"):
         info.append(("Fontes", ", ".join(PORTAL_LABEL.get(f, f) for f in ctx["fontes"])))
     for r, (rot, val) in enumerate(info, start=13):
@@ -415,7 +502,7 @@ def gerar_excel(
         ini[f"B{r}"].alignment = ini[f"C{r}"].alignment = ESQ
         ini[f"B{r}"].border = ini[f"C{r}"].border = B_BAIXO
 
-    for nome, cor in zip(nomes, (VERDE_ESCURO, VERDE_ESCURO, VERDE, "BFBFBF", AMARELO)):
+    for nome, cor in zip(nomes, (VERDE_ESCURO, VERDE_ESCURO, VERDE, VERDE, "BFBFBF", AMARELO)):
         abas[nome].sheet_properties.tabColor = cor
     wb.active = 1                         # abre no RESUMO
     wb.calculation.fullCalcOnLoad = True  # openpyxl não grava resultado de fórmula

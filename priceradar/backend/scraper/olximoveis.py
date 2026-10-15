@@ -474,3 +474,48 @@ async def scrape_olximoveis(
     if descartes:
         logger.info(f"OLX ({modo}): descartados por município: {dict(descartes.most_common(5))}")
     return resultados
+
+
+# Busca pelo NOME do empreendimento (procura por empreendimento, coleta
+# direcionada). Medido em 15/10/2026: `?q=reserva+arvoredo` no estado trouxe
+# 50 anúncios e os 50 citavam o nome — o histórico de buscas por preço só
+# tinha 23. A OLX não publica rua nem CEP (só município e bairro), então para
+# ela o nome é o único sinal de prédio, e buscar por ele é o que dá volume.
+OLX_BUSCA_NOME_HABILITADA = os.getenv("HABILITAR_OLX_BUSCA_NOME", "true").lower() == "true"
+OLX_BUSCA_NOME_PAGINAS = int(os.getenv("OLX_BUSCA_NOME_PAGINAS", "2"))
+
+
+def build_olx_url_nome(cidade: str, estado: str, nome: str, pagina: int = 1) -> str:
+    """Texto livre na cidade (região conhecida) ou no estado."""
+    estado_path = ESTADOS_MAP.get(estado.lower(), f"estado-{estado.lower()}")
+    regiao = regiao_olx(estado, cidade)
+    caminho = f"{estado_path}/{regiao}/{_slug(cidade)}" if regiao else estado_path
+    params = [f"q={quote_plus(nome.strip())}"]
+    if pagina > 1:
+        params.append(f"o={pagina}")
+    return f"{OLX_BASE_URL}/imoveis/venda/apartamentos/{caminho}?{'&'.join(params)}"
+
+
+async def buscar_olx_por_nome(cidade: str, estado: str, nome: str) -> list[dict]:
+    """
+    Anúncios da OLX que citam `nome`, só do município pedido (o parser exige
+    o município: a busca por texto no estado traz a região metropolitana).
+    Falha devolve lista vazia — a procura segue com o histórico.
+    """
+    if not OLX_BUSCA_NOME_HABILITADA or not (nome or "").strip():
+        return []
+    cidade_normalizada = normalizar_cidade(cidade.split(',')[0])
+
+    async def pagina(n: int) -> list[dict]:
+        url = build_olx_url_nome(cidade, estado, nome, n)
+        logger.info(f"OLX busca por nome p{n}: {url}")
+        try:
+            html = await buscar_html(url, "OLX-nome")
+        except Exception as e:
+            logger.warning(f"OLX busca por nome p{n}: {e}")
+            return []
+        if not html or len(html) < 1000:
+            return []
+        return parse_olx_html(html, cidade_normalizada, exigir_municipio=True)
+
+    return await paginar(pagina, OLX_BUSCA_NOME_PAGINAS, "OLX-nome")

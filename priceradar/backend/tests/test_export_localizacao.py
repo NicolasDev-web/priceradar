@@ -47,7 +47,7 @@ def celula(ws, nome_coluna, linha=2):
 
 def test_abas_na_ordem_e_abre_no_resumo():
     wb = livro([empreendimento()])
-    assert wb.sheetnames == ["INICIO", "RESUMO", "BAIRROS", "ANUNCIOS", "CONFIG"]
+    assert wb.sheetnames == ["INICIO", "RESUMO", "BAIRROS", "EMPREENDIMENTOS", "ANUNCIOS", "CONFIG"]
     assert wb.active.title == "RESUMO"
 
 
@@ -153,3 +153,27 @@ def test_so_cores_da_paleta_mrv():
                         and regra.dxf.fill.fgColor.rgb:
                     usadas.add(regra.dxf.fill.fgColor.rgb[-6:])
     assert usadas and usadas <= paleta, usadas - paleta
+
+
+def test_aba_empreendimentos_conta_pelo_predio_da_base():
+    """Dois anúncios no mesmo ponto viram um prédio; a contagem é COUNTIF na base."""
+    a = empreendimento()
+    a = a.model_copy(update={"url_anuncio": "https://x/1", "latitude": -3.7461, "longitude": -38.4710,
+                             "origem_coordenada": "exata", "endereco": "Rua Vilebaldo Aguiar, 2100"})
+    b = a.model_copy(update={"id": "2", "url_anuncio": "https://x/2", "preco": a.preco * 1.05,
+                             "preco_m2": a.preco_m2 * 1.05})
+    sozinho = a.model_copy(update={"id": "3", "url_anuncio": "https://x/3", "latitude": None, "longitude": None,
+                                   "origem_coordenada": None, "endereco": None, "bairro": "Centro"})
+    wb = livro([a, b, sozinho])
+    ws = wb["EMPREENDIMENTOS"]
+    assert ws["A2"].value == "Residencial Teste"       # nome tem preferência sobre o endereço
+    assert ws["B2"].value == "Rua Vilebaldo Aguiar, 2100"
+    assert ws["D2"].value.startswith("=COUNTIF(ANUNCIOS!")
+    assert ws["A3"].value is None                      # o anúncio sozinho não é prédio
+    predios = [celula(wb["ANUNCIOS"], "Prédio", r).value for r in (2, 3, 4)]
+    assert sorted(p or "" for p in predios) == ["", "Residencial Teste", "Residencial Teste"]
+
+
+def test_aba_empreendimentos_vazia_explica():
+    ws = livro([empreendimento()])["EMPREENDIMENTOS"]
+    assert "Nenhum prédio" in ws["A2"].value

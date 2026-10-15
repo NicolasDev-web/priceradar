@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter, defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from scraper.parser import revisar_empreendimento_gravado
 from scraper.rsc_grupozap import chave_url
@@ -230,9 +230,30 @@ def pontuar(item: dict, alvo: dict) -> str | None:
     return None
 
 
+def mesclar_coletados(historico: list[dict], coletados: list[dict]) -> list[dict]:
+    """
+    Junta ao histórico anúncios coletados agora e não gravados (busca da OLX
+    pelo nome). Mesma URL: fica o dado novo, com a primeira aparição antiga.
+    """
+    agora = datetime.now()
+    por_url = {chave_url(i['url_anuncio']) or i['url_anuncio']: i for i in historico}
+    for novo in coletados:
+        novo = dict(novo)
+        revisar_empreendimento_gravado(novo)
+        chave = chave_url(novo.get('url_anuncio') or '') or novo.get('url_anuncio')
+        antigo = por_url.get(chave)
+        novo.update(
+            primeira_vez=antigo['primeira_vez'] if antigo else agora,
+            ultima_vez=agora,
+            grupos_gravados=antigo['grupos_gravados'] if antigo else set(),
+        )
+        por_url[chave] = novo
+    return list(por_url.values())
+
+
 async def procurar_empreendimento(
     db, cidade: str, nome: str | None, endereco: str | None, raio_m: float = 60.0,
-    bairro: str | None = None,
+    bairro: str | None = None, coletados: list[dict] | None = None,
 ) -> dict:
     from repositories.empreendimento_repo import historico_da_cidade
     from services.geocoding import geocodificar
@@ -251,6 +272,8 @@ async def procurar_empreendimento(
     }
 
     itens = preparar_historico(await historico_da_cidade(db, cidade))
+    if coletados:
+        itens = mesclar_coletados(itens, coletados)
     membros, resumos = _membros_por_grupo(itens)
 
     motivos: dict[str, str] = {}
@@ -313,3 +336,20 @@ async def procurar_empreendimento(
     resposta['sugestoes'] = [resumos[g] for g, _ in contagem.most_common(8) if g in resumos]
     resposta['total_historico'] = len(itens)
     return resposta
+
+
+def bairro_dominante(resposta: dict) -> str | None:
+    """
+    Bairro mais frequente no que a procura achou — confirmados primeiro,
+    depois os prédios sugeridos, depois os prováveis. É o bairro da coleta
+    direcionada: vem na divisão de bairros dos portais, não na do OSM.
+    """
+    for fonte in (
+        [a.get('bairro') for a in resposta.get('anuncios') or []],
+        [s.get('bairro') for s in resposta.get('sugestoes') or []],
+        [a.get('bairro') for a in resposta.get('provaveis') or []],
+    ):
+        contagem = Counter(b for b in fonte if b)
+        if contagem:
+            return contagem.most_common(1)[0][0]
+    return None

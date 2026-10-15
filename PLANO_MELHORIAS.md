@@ -229,7 +229,7 @@ contava o mesmo anúncio uma vez por busca (33 linhas para 12 anúncios no banco
 | F6.5 ✅ | Testes: bug da cidade, deduplicação, amostra mínima, bairro com acento/sem acento, filtro de quartos, endpoint. | `tests/test_evolucao.py` |
 | F6.6 | (Depois, se aprovado) aba EVOLUÇÃO no Excel exportado — via agente `excel-design-architect`. | `services/export.py` |
 
-## F7 — Agrupamento de anúncios por empreendimento — ✅ F7.1–F7.4 (F7.5 pendente)
+## F7 — Agrupamento de anúncios por empreendimento — ✅ feito
 
 Pedido de 15/10/2026: juntar os vários anúncios do mesmo empreendimento (prédio/condomínio)
 para ter o preço dele, pelo nome e pelo endereço. Medido no banco local: o nome quase nunca
@@ -243,5 +243,13 @@ ponto da Rua Vilebaldo Aguiar). Avaliação: `scripts/avaliar_agrupamento.py`.
 | F7.2 ✅ | Motor `agrupar`: endereço com número, coordenada exata (≤30 m), nome (com lugar compatível); trava de conflito (nomes diferentes, números diferentes, preço/m² 40% diferente, >400 m); mesma unidade conta uma vez; `grupo_id` estável; KPI "mediana por prédio". Corrige também o `por_bairro` vazio no cache. | `services/agrupamento.py`, `services/search.py` |
 | F7.3 ✅ | Dossiê `GET /api/empreendimentos/{id}` e busca `POST /api/empreendimentos/buscar` (nome/endereço, geocodificação Nominatim só do endereço digitado, coleta direcionada opcional, prédios sugeridos para rua sem número). | `services/dossie.py`, `services/geocoding.py`, `main.py` |
 | F7.4 ✅ | Tela: vista Anúncios/Empreendimentos, `EmpreendimentoCard`, painel do dossiê, selo "Mesmo prédio" e "x% vs prédio" no card, campo "Procurar empreendimento". Histórico reabre a busca com bairros/banheiros/tipo. | `frontend/src/` |
-| F7.5 ⏳ | Excel: aba EMPREENDIMENTOS e coluna do grupo (agente `excel-design-architect`). | `services/export.py` |
-| F7.6 ⏳ | Medir com `diagnosticar-scraper` se a OLX publica rua/CEP no RSC e se aceita busca por texto (`?q=`) para o nome. | `scraper/olximoveis.py` |
+| F7.5 ✅ | Excel: aba EMPREENDIMENTOS (contagem e média por fórmula sobre a nova coluna Prédio da base; mediana por unidade como valor) e linha no INICIO. | `services/export.py` |
+| F7.6 ✅ | OLX medida em 15/10: **não** publica rua nem CEP (só município/bairro/UF). A busca por texto funciona: `?q=reserva+arvoredo` → 50 anúncios, 50 citando o nome. Ligada na procura por nome com coleta (`HABILITAR_OLX_BUSCA_NOME`, 2 páginas), sem gravar como busca. | `scraper/olximoveis.py`, `main.py` |
+
+**Verificado ao vivo (15/10/2026):** busca real no Cocó trouxe endereço com número em 7/7 VivaReal e
+4/4 ZAP (antes: 24 de 3.906), CEP em 4/4 ChavesNaMão (o Grupo ZAP não publica CEP). Nominatim:
+número achado em 4 de 7 endereços de Fortaleza, ponto a ~6 m do publicado pelo portal; sem número,
+cai para "prédios desta rua". O bairro do OSM diverge do dos portais (Andrade Furtado, 1100 é
+"Cidade 2000" no OSM e "Cocó" no VivaReal) — a coleta direcionada usa o bairro do histórico.
+**Ideia não implementada:** a OLX publica a taxa de condomínio (`properties.condominio`); mesmo bairro
++ mesma taxa pode virar sinal de prédio para a OLX.

@@ -199,3 +199,44 @@ def test_endpoint_procurar(cliente):
 def test_endpoint_dossie_404(cliente):
     r = cliente.get('/api/empreendimentos/emp_x', params={'cidade': 'Fortaleza, CE'})
     assert r.status_code == 404
+
+
+def test_bairro_da_coleta_vem_do_historico_e_nao_do_osm():
+    """Andrade Furtado, 1100: "Cidade 2000" no OSM, "Cocó" nos portais."""
+    resposta = {
+        'anuncios': [],
+        'sugestoes': [{'bairro': 'Cocó'}, {'bairro': 'Cocó'}, {'bairro': 'Papicu'}],
+        'provaveis': [{'bairro': 'Cidade 2000'}],
+    }
+    assert dossie.bairro_dominante(resposta) == 'Cocó'
+    assert dossie.bairro_dominante({'anuncios': [{'bairro': 'Barroso'}], 'sugestoes': [{'bairro': 'Cocó'}]}) == 'Barroso'
+    assert dossie.bairro_dominante({'anuncios': [], 'sugestoes': [], 'provaveis': []}) is None
+
+
+def test_url_da_olx_por_nome():
+    from scraper.olximoveis import build_olx_url_nome
+    url = build_olx_url_nome('fortaleza', 'ce', 'Reserva Arvoredo', 2)
+    assert 'q=Reserva+Arvoredo' in url and 'o=2' in url
+    assert url.startswith('https://www.olx.com.br/imoveis/venda/apartamentos/')
+
+
+def test_coletados_entram_na_procura_sem_duplicar_o_historico():
+    """Anúncio da OLX achado agora pelo nome soma ao histórico; o que já
+    estava gravado não duplica e mantém a data da primeira aparição."""
+    def olx(url, preco, nome_anuncio):
+        return {'url_anuncio': url, 'portal': 'olx', 'nome_anuncio': nome_anuncio,
+                'nome_empreendimento': None, 'descricao': '', 'cidade': 'fortaleza',
+                'bairro': 'Barroso', 'preco': preco, 'area_m2': 46, 'preco_m2': round(preco / 46, 2),
+                'quartos': 2, 'latitude': None, 'longitude': None, 'origem_coordenada': None}
+
+    async def corpo(db):
+        await gravar(db, [emp('o1', 270_000, 46, nome='Condomínio Reserva Arvoredo', bairro='Barroso', portal='olx')])
+        coletados = [olx('o1', 260_000, 'Condomínio Reserva Arvoredo'),
+                     olx('o9', 280_000, 'Apto no Condomínio Reserva Arvoredo')]
+        return await dossie.procurar_empreendimento(db, 'Fortaleza, CE', 'Reserva Arvoredo', None,
+                                                    coletados=coletados)
+    r = com_banco(corpo)
+    por_url = {a['url_anuncio']: a for a in r['anuncios']}
+    assert set(por_url) == {'o1', 'o9'}
+    assert por_url['o1']['preco'] == 260_000            # dado novo
+    assert por_url['o1']['primeira_vez'] == SEMANA_1    # aparição antiga

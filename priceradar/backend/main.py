@@ -54,11 +54,13 @@ from repositories.empreendimento_repo import (
 from services import jobs
 from services.bairros import listar_bairros
 from services.comparacao import comparar_com_anterior
-from services.dossie import montar_dossie, procurar_empreendimento
+from services.dossie import bairro_dominante, montar_dossie, procurar_empreendimento
 from services.geocoding import geocodificar
 from services.evolucao import ler_lista_bairros, serie_por_bairro
 from services.export import gerar_excel
-from services.search import completar_resposta_do_cache, executar_busca
+from services.search import completar_resposta_do_cache, executar_busca, extrair_cidade_estado
+from services.validacao import filtrar_anuncios
+from scraper.olximoveis import buscar_olx_por_nome
 from services.imagens import ImagemIndisponivel, obter_imagem, url_permitida
 from services.tiles import TileIndisponivel, coordenada_valida, obter_tile
 
@@ -240,8 +242,18 @@ async def procurar_empreendimento_endpoint(
         # feita | sem_bairro | None (não pedida) — a tela precisa saber se a
         # coleta rodou, senão "nada novo" parece resultado da coleta.
         coleta = None
+        coletados: list[dict] = []
         if payload.coletar:
             bairro = payload.bairro
+            if not bairro:
+                # O bairro do que o histórico já achou vem na divisão dos
+                # portais — a mesma que a coleta usa. O do OSM diverge: a Rua
+                # Andrade Furtado, 1100 é "Cidade 2000" no OSM e "Cocó" no
+                # VivaReal. O do OSM fica como último recurso.
+                previa = await procurar_empreendimento(
+                    db, payload.cidade, payload.nome, payload.endereco, payload.raio_m, None,
+                )
+                bairro = bairro_dominante(previa)
             if not bairro and payload.endereco:
                 geo = await geocodificar(payload.endereco, payload.cidade)
                 bairro = (geo or {}).get("bairro")
@@ -256,8 +268,20 @@ async def procurar_empreendimento_endpoint(
                 coleta = "feita"
             else:
                 coleta = "sem_bairro"
+            # A OLX não publica rua nem CEP; pelo nome, a busca por texto dela
+            # traz o empreendimento inteiro (50 de 50 citando o nome, medido).
+            # Não vira busca gravada: ocuparia o cache de uma faixa de preço.
+            if payload.nome:
+                cidade_slug, estado = extrair_cidade_estado(payload.cidade)
+                coletados = await buscar_olx_por_nome(cidade_slug, estado, payload.nome)
+                if coletados:
+                    coletados, _ = filtrar_anuncios(coletados, BuscaRequest(
+                        cidade=payload.cidade, preco_min=payload.preco_min, preco_max=payload.preco_max,
+                    ))
+                    coleta = "feita"
         resposta = await procurar_empreendimento(
             db, payload.cidade, payload.nome, payload.endereco, payload.raio_m, payload.bairro,
+            coletados=coletados,
         )
         resposta["coleta"] = coleta
         return resposta
