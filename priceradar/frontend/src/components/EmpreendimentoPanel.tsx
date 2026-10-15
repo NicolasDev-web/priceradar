@@ -66,7 +66,7 @@ function LinhaAnuncio({ a }: { a: AnuncioDossie }) {
             {LABEL_PORTAL(a.portal)}
           </span>
           {!a.ativo && (
-            <span className="text-[10px] text-mrv-text-dim" title="Não apareceu nas coletas das últimas 2 semanas">
+            <span className="text-[10px] text-mrv-text-dim" title="Não apareceu na coleta mais recente deste portal neste bairro">
               fora do ar desde {dataCurta(a.ultima_vez)}
             </span>
           )}

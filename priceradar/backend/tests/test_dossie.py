@@ -240,3 +240,32 @@ def test_coletados_entram_na_procura_sem_duplicar_o_historico():
     assert set(por_url) == {'o1', 'o9'}
     assert por_url['o1']['preco'] == 260_000            # dado novo
     assert por_url['o1']['primeira_vez'] == SEMANA_1    # aparição antiga
+
+
+def test_nome_sem_lugar_fica_no_bairro_predominante():
+    """Sem endereço nem bairro, o bairro com mais anúncios do nome decide."""
+    async def corpo(db):
+        await gravar(db, [
+            emp('b1', 270_000, 46, nome='Condomínio Reserva Arvoredo', bairro='Barroso', portal='olx'),
+            emp('b2', 280_000, 46, nome='Condomínio Reserva Arvoredo', bairro='Barroso', portal='olx'),
+            emp('x1', 600_000, 60, nome='Residencial Reserva Arvoredo', bairro='Aldeota', portal='olx'),
+        ])
+        return await dossie.procurar_empreendimento(db, 'Fortaleza, CE', 'Reserva Arvoredo', None)
+    r = com_banco(corpo)
+    assert {a['url_anuncio'] for a in r['anuncios']} == {'b1', 'b2'}
+    assert [a['url_anuncio'] for a in r['provaveis']] == ['x1']
+
+
+def test_no_ar_e_relativo_a_ultima_coleta_do_bairro():
+    """Coleta nova no Cocó não tira do ar os anúncios do Barroso."""
+    from datetime import datetime as dt
+
+    async def corpo(db):
+        await gravar(db, [emp('b1', 270_000, 46, nome='Condomínio Reserva Arvoredo', bairro='Barroso', portal='olx'),
+                          emp('b2', 280_000, 46, nome='Condomínio Reserva Arvoredo', bairro='Barroso', portal='olx')],
+                     quando=SEMANA_1)
+        await gravar(db, [emp('c1', 600_000, bairro='Cocó', portal='olx', quando=dt(2026, 10, 15))],
+                     quando=dt(2026, 10, 15))
+        return await dossie.procurar_empreendimento(db, 'Fortaleza, CE', 'Reserva Arvoredo', None)
+    r = com_banco(corpo)
+    assert r['ativos'] == 2

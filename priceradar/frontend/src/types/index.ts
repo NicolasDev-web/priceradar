@@ -158,7 +158,7 @@ export interface AnuncioDossie {
   foto: string | null
   primeira_vez: string | null
   ultima_vez: string | null
-  /** Visto na coleta mais recente da cidade (janela de 14 dias). */
+  /** Visto na coleta mais recente do mesmo portal no mesmo bairro (janela de 14 dias). */
   ativo: boolean
   variacao_vs_grupo_pct: number | null
   motivo: MotivoAnuncio | null

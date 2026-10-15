@@ -65,7 +65,8 @@ def _foto(item: dict) -> str | None:
     return fotos[0] if isinstance(fotos, list) and fotos else None
 
 
-def _anuncio_saida(item: dict, mediana: float | None, ultima_coleta, motivo: str | None = None) -> dict:
+def _anuncio_saida(item: dict, mediana: float | None, ultimas: dict, motivo: str | None = None) -> dict:
+    ultima_coleta = ultimas.get(_chave_cobertura(item))
     return {
         'url_anuncio': item['url_anuncio'],
         'portal': item.get('portal'),
@@ -99,9 +100,27 @@ async def _serie(db, cidade: str, urls: set[str]) -> list[dict]:
     return [_ponto(s, v) for s, v in sorted(por_semana.items())]
 
 
-def _ultima_coleta(itens: list[dict]):
-    datas = [i['ultima_vez'] for i in itens if i.get('ultima_vez')]
-    return max(datas) if datas else None
+def _chave_cobertura(item: dict) -> tuple[str, str]:
+    return (str(item.get('portal') or ''), normalizar(item.get('bairro') or ''))
+
+
+def _ultimas_coletas(itens: list[dict]) -> dict[tuple[str, str], object]:
+    """
+    Última vez que cada portal foi coletado em cada bairro.
+
+    "No ar" é relativo a ISTO, não à última coleta da cidade: uma busca de
+    hoje no Cocó não diz nada sobre os anúncios do Barroso — com a referência
+    da cidade, 21 de 23 anúncios do Reserva Arvoredo apareciam "fora do ar"
+    só porque o Barroso não tinha sido coletado de novo.
+    """
+    ultimas: dict[tuple[str, str], object] = {}
+    for i in itens:
+        quando = i.get('ultima_vez')
+        if quando:
+            chave = _chave_cobertura(i)
+            if chave not in ultimas or quando > ultimas[chave]:
+                ultimas[chave] = quando
+    return ultimas
 
 
 def _membros_por_grupo(itens: list[dict]) -> tuple[dict[str, list[dict]], dict[str, dict]]:
@@ -115,7 +134,7 @@ def _membros_por_grupo(itens: list[dict]) -> tuple[dict[str, list[dict]], dict[s
 
 async def _montar_resposta(db, cidade: str, itens_hist: list[dict], escolhidos: list[dict],
                            motivos: dict[str, str], sinais: set[str], provaveis: list[dict] | None = None) -> dict:
-    ultima = _ultima_coleta(itens_hist)
+    ultima = _ultimas_coletas(itens_hist)
     resumo = resumir_grupo(escolhidos, sinais) if escolhidos else None
     mediana = resumo['preco_m2_mediana'] if resumo else None
     anuncios = sorted(
@@ -276,6 +295,7 @@ async def procurar_empreendimento(
         itens = mesclar_coletados(itens, coletados)
     membros, resumos = _membros_por_grupo(itens)
 
+    por_url_0 = {i['url_anuncio']: i for i in itens}
     motivos: dict[str, str] = {}
     for item in itens:
         motivo = pontuar(item, alvo)
@@ -284,6 +304,21 @@ async def procurar_empreendimento(
 
     fortes = {'endereco', 'coordenada', 'nome'}
     confirmados = {u for u, m in motivos.items() if m in fortes}
+    # Nome sem lugar para conferir (nada de endereço nem bairro informados):
+    # o bairro predominante entre os que casaram pelo nome decide; os demais
+    # viram prováveis. Medido: "Reserva Arvoredo" trazia 3 anúncios do Eng.
+    # Luciano Cavalcante confirmados junto com os 38 do Barroso.
+    if not alvo['bairro'] and not geo:
+        por_nome = [u for u in confirmados if motivos[u] == 'nome']
+        contagem = Counter(normalizar(por_url_0[u].get('bairro') or '') for u in por_nome)
+        contagem.pop('', None)
+        if len(contagem) > 1:
+            dominante = contagem.most_common(1)[0][0]
+            for u in por_nome:
+                b = normalizar(por_url_0[u].get('bairro') or '')
+                if b and b != dominante:
+                    confirmados.discard(u)
+                    motivos[u] = 'texto'   # cita o nome, mas em outro lugar
     sinais = {motivos[u] for u in confirmados}
     # O resto do prédio de cada confirmado entra também.
     por_url = {i['url_anuncio']: i for i in itens}
