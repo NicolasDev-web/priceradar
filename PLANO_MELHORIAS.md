@@ -228,3 +228,20 @@ contava o mesmo anúncio uma vez por busca (33 linhas para 12 anúncios no banco
 | F6.4 ✅ | Gráfico `EvolucaoBairrosChart`: uma linha por bairro (até ~6), padrão = bairros da busca ou os de maior volume, seletor para trocar, tooltip com n, ponto fraco tracejado, mensagem quando há menos de 2 períodos. | `frontend/src/components/` |
 | F6.5 ✅ | Testes: bug da cidade, deduplicação, amostra mínima, bairro com acento/sem acento, filtro de quartos, endpoint. | `tests/test_evolucao.py` |
 | F6.6 | (Depois, se aprovado) aba EVOLUÇÃO no Excel exportado — via agente `excel-design-architect`. | `services/export.py` |
+
+## F7 — Agrupamento de anúncios por empreendimento — ✅ F7.1–F7.4 (F7.5 pendente)
+
+Pedido de 15/10/2026: juntar os vários anúncios do mesmo empreendimento (prédio/condomínio)
+para ter o preço dele, pelo nome e pelo endereço. Medido no banco local: o nome quase nunca
+vinha (19 de 11.475 linhas, e com ruído), o endereço só vinha do Grupo ZAP e sem número, e
+o sinal mais forte de prédio é a **coordenada exata** do Grupo ZAP (23 anúncios no mesmo
+ponto da Rua Vilebaldo Aguiar). Avaliação: `scripts/avaliar_agrupamento.py`.
+
+| # | Tarefa | Onde |
+| --- | --- | --- |
+| F7.1 ✅ | Dados: nome não é mais o título (OLX, ML, QuintoAndar, NetImóveis); extração de nome corta a frase seguinte e recusa slogan; nome pelo slug de lançamento; `eh_lancamento`; rua + número + CEP do RSC do Grupo ZAP; rua/CEP do JSON-LD do ChavesNaMão. | `scraper/parser.py`, `scraper/rsc_grupozap.py`, `scraper/*.py` |
+| F7.2 ✅ | Motor `agrupar`: endereço com número, coordenada exata (≤30 m), nome (com lugar compatível); trava de conflito (nomes diferentes, números diferentes, preço/m² 40% diferente, >400 m); mesma unidade conta uma vez; `grupo_id` estável; KPI "mediana por prédio". Corrige também o `por_bairro` vazio no cache. | `services/agrupamento.py`, `services/search.py` |
+| F7.3 ✅ | Dossiê `GET /api/empreendimentos/{id}` e busca `POST /api/empreendimentos/buscar` (nome/endereço, geocodificação Nominatim só do endereço digitado, coleta direcionada opcional, prédios sugeridos para rua sem número). | `services/dossie.py`, `services/geocoding.py`, `main.py` |
+| F7.4 ✅ | Tela: vista Anúncios/Empreendimentos, `EmpreendimentoCard`, painel do dossiê, selo "Mesmo prédio" e "x% vs prédio" no card, campo "Procurar empreendimento". Histórico reabre a busca com bairros/banheiros/tipo. | `frontend/src/` |
+| F7.5 ⏳ | Excel: aba EMPREENDIMENTOS e coluna do grupo (agente `excel-design-architect`). | `services/export.py` |
+| F7.6 ⏳ | Medir com `diagnosticar-scraper` se a OLX publica rua/CEP no RSC e se aceita busca por texto (`?q=`) para o nome. | `scraper/olximoveis.py` |
