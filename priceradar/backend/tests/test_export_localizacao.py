@@ -47,7 +47,8 @@ def celula(ws, nome_coluna, linha=2):
 
 def test_abas_na_ordem_e_abre_no_resumo():
     wb = livro([empreendimento()])
-    assert wb.sheetnames == ["INICIO", "RESUMO", "BAIRROS", "EMPREENDIMENTOS", "ANUNCIOS", "CONFIG"]
+    assert wb.sheetnames == ["INICIO", "RESUMO", "BAIRROS", "MESMO PREDIO", "MESMO LOCAL", "MESMO NOME",
+                             "ANUNCIOS", "CONFIG"]
     assert wb.active.title == "RESUMO"
 
 
@@ -155,25 +156,28 @@ def test_so_cores_da_paleta_mrv():
     assert usadas and usadas <= paleta, usadas - paleta
 
 
-def test_aba_empreendimentos_conta_pelo_predio_da_base():
-    """Dois anúncios no mesmo ponto viram um prédio; a contagem é COUNTIF na base."""
-    a = empreendimento()
-    a = a.model_copy(update={"url_anuncio": "https://x/1", "latitude": -3.7461, "longitude": -38.4710,
-                             "origem_coordenada": "exata", "endereco": "Rua Vilebaldo Aguiar, 2100"})
+def test_abas_por_nivel_e_vinculo_na_base():
+    """Mesmo endereço → MESMO PREDIO; sem número no mesmo ponto → provável, fora do preço."""
+    a = empreendimento().model_copy(update={
+        "url_anuncio": "https://x/1", "latitude": -3.7461, "longitude": -38.4710,
+        "origem_coordenada": "exata", "endereco": "Rua Vilebaldo Aguiar, 2100"})
     b = a.model_copy(update={"id": "2", "url_anuncio": "https://x/2", "preco": a.preco * 1.05,
                              "preco_m2": a.preco_m2 * 1.05})
-    sozinho = a.model_copy(update={"id": "3", "url_anuncio": "https://x/3", "latitude": None, "longitude": None,
-                                   "origem_coordenada": None, "endereco": None, "bairro": "Centro"})
-    wb = livro([a, b, sozinho])
-    ws = wb["EMPREENDIMENTOS"]
-    assert ws["A2"].value == "Residencial Teste"       # nome tem preferência sobre o endereço
+    sem_numero = a.model_copy(update={"id": "3", "url_anuncio": "https://x/3", "endereco": "Rua Vilebaldo Aguiar",
+                                      "nome_empreendimento": None})
+    wb = livro([a, b, sem_numero])
+    ws = wb["MESMO PREDIO"]
+    assert ws["A2"].value == "Residencial Teste"         # nome tem preferência sobre o endereço
     assert ws["B2"].value == "Rua Vilebaldo Aguiar, 2100"
-    assert ws["D2"].value.startswith("=COUNTIF(ANUNCIOS!")
-    assert ws["A3"].value is None                      # o anúncio sozinho não é prédio
-    predios = [celula(wb["ANUNCIOS"], "Prédio", r).value for r in (2, 3, 4)]
-    assert sorted(p or "" for p in predios) == ["", "Residencial Teste", "Residencial Teste"]
+    assert ws["D2"].value.startswith("=COUNTIFS(ANUNCIOS!") and '"confirmado"' in ws["D2"].value
+    assert '"provável"' in ws["E2"].value
+    assert '"confirmado"' in ws["H2"].value and ws["H2"].value.startswith("=AVERAGEIFS(")
+    assert "Nenhum grupo" in wb["MESMO LOCAL"]["A2"].value
+    vinculos = sorted(celula(wb["ANUNCIOS"], "Vínculo", r).value for r in (2, 3, 4))
+    assert vinculos == ["confirmado", "confirmado", "provável"]
 
 
-def test_aba_empreendimentos_vazia_explica():
-    ws = livro([empreendimento()])["EMPREENDIMENTOS"]
-    assert "Nenhum prédio" in ws["A2"].value
+def test_abas_por_nivel_vazias_explicam():
+    wb = livro([empreendimento()])
+    for aba in ("MESMO PREDIO", "MESMO LOCAL", "MESMO NOME"):
+        assert "Nenhum grupo" in wb[aba]["A2"].value

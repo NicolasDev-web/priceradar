@@ -18,6 +18,18 @@ Sinais, do mais ao menos confiável (medido no banco local em 15/10/2026):
   sem rua nem coordenada — pode ter. Só une com corroboração de lugar.
 - Rua **sem** número não une nada: uma avenida tem dezenas de prédios.
 
+Três NÍVEIS, cada anúncio em no máximo um grupo (são as abas da tela e do
+Excel):
+
+- ``mesmo_predio``: rua + número idênticos. É a definição de "exato mesmo
+  prédio". Medido em 15/10 com os números do RSC: 26 endereços com 2+
+  anúncios, 24 com coordenada idêntica. Anúncio sem número no mesmo ponto
+  entra como ANEXO provável — mostrado, mas fora do preço.
+- ``mesmo_local``: o que sobrou, ligado por coordenada exata. Provável, não
+  prova: no mesmo ponto (-3.82086, -38.50859) havia "Rua A, 298" e "Rua B, 100".
+- ``mesmo_nome``: o que sobrou, ligado pelo nome. Pode ser condomínio de
+  várias torres ou dois empreendimentos homônimos — "confira".
+
 Conservadorismo, como no deduplicador: na dúvida, separado. Um prédio partido
 em dois grupos subestima a amostra; dois prédios fundidos produzem um preço
 médio que não existe — e esse vai para a reunião comercial.
@@ -50,6 +62,17 @@ MAX_PALAVRAS_NOME = 5
 # prédio raramente diferem tanto — se as medianas dos dois lados passarem
 # desta razão, não une.
 RAZAO_MAX_PRECO_M2 = 1.4
+
+# Níveis de agrupamento — do mais ao menos provado.
+NIVEL_PREDIO = 'mesmo_predio'
+NIVEL_LOCAL = 'mesmo_local'
+NIVEL_NOME = 'mesmo_nome'
+_CONFIANCA_NIVEL = {NIVEL_PREDIO: 'alta', NIVEL_LOCAL: 'media', NIVEL_NOME: 'baixa'}
+# Mesmo endereço com coordenadas exatas mais longe que isto é erro de
+# digitação no portal (o maior desvio medido no mesmo endereço foi 65 m).
+RAIO_MESMO_ENDERECO_M = 150.0
+# Anúncio sem número a até isto do ponto de um prédio confirmado: provável.
+RAIO_ANEXO_M = 15.0
 
 # Mesma unidade anunciada duas vezes (corretores diferentes, mesmo portal):
 # o deduplicador não funde pares do mesmo portal, então a estatística do
@@ -95,8 +118,9 @@ def normalizar_rua(endereco: str | None) -> tuple[str | None, str | None]:
         m = re.search(r'\s(\d{1,5})\s*$', rua_txt)
         if m:
             numero, rua_txt = m.group(1), rua_txt[:m.start()]
-    if numero is not None and numero.strip('0') == '':
-        numero = None
+    if numero is not None:
+        # "Raimundo Girão, 0630" e ", 630" são o mesmo prédio (medido em 15/10).
+        numero = numero.lstrip('0') or None
 
     tokens = [_ABREVIACOES.get(t, t) for t in _tokens(rua_txt)]
     tokens = [t for t in tokens if t not in _CONECTORES]
@@ -374,8 +398,14 @@ def id_do_grupo(chave: str) -> str:
     return 'emp_' + hashlib.sha1(chave.encode('utf-8')).hexdigest()[:12]
 
 
-def resumir_grupo(itens: list[dict], sinais: set[str] | None = None) -> dict:
-    """Estatística de um empreendimento a partir dos anúncios dele."""
+def resumir_grupo(
+    itens: list[dict], sinais: set[str] | None = None, nivel: str | None = None,
+    anexos: list[dict] | None = None,
+) -> dict:
+    """
+    Estatística de um empreendimento a partir dos anúncios CONFIRMADOS dele.
+    `anexos` (prováveis) só são listados — nunca entram no preço.
+    """
     cidade = normalizar(str(itens[0].get('cidade') or ''))
     unidades = colapsar_unidades(itens)
     precos_m2 = sorted(
@@ -416,21 +446,70 @@ def resumir_grupo(itens: list[dict], sinais: set[str] | None = None) -> dict:
         'portais': sorted({str(i.get('portal')) for i in itens if i.get('portal')}),
         # Um anúncio dizendo "lançamento" basta; "pronto" só se nenhum disser o contrário.
         'eh_lancamento': True if True in lancamento else (False if False in lancamento else None),
-        # Endereço com número ou coordenada exata identificam o prédio; só o
-        # nome, não — dois "Residencial Jardins" no mesmo bairro existem.
-        'confianca': 'alta' if sinais & {'endereco', 'coordenada'} else 'media',
+        'nivel': nivel or _nivel_por_sinais(sinais),
+        'confianca': _CONFIANCA_NIVEL[nivel or _nivel_por_sinais(sinais)],
         'sinais': sorted(sinais),
         'foto': fotos,
+        'anexos': [a['url_anuncio'] for a in anexos or []],
+        'n_provaveis': len(anexos or []),
     }
+
+
+def _nivel_por_sinais(sinais: set[str]) -> str:
+    """Para grupos montados fora de `agrupar` (dossiê, procura)."""
+    if 'endereco' in sinais:
+        return NIVEL_PREDIO
+    if 'coordenada' in sinais:
+        return NIVEL_LOCAL
+    return NIVEL_NOME
 
 
 # ── Entrada principal ────────────────────────────────────────────────────────
 
+def _dividir_por_distancia(indices: list[int], anuncios: list['_Anuncio']) -> list[list[int]]:
+    """
+    Mesmo endereço, mas coordenadas exatas a mais de RAIO_MESMO_ENDERECO_M:
+    é erro de digitação de um dos portais, e o "prédio" se divide. Anúncio sem
+    coordenada fica com a maior parte — não há como saber de qual lado está.
+    """
+    com = [i for i in indices if anuncios[i].tem_coord]
+    sem = [i for i in indices if not anuncios[i].tem_coord]
+    partes: list[list[int]] = []
+    for i in com:
+        a = anuncios[i]
+        for parte in partes:
+            if any(distancia_m(a.lat, a.lng, anuncios[j].lat, anuncios[j].lng) <= RAIO_MESMO_ENDERECO_M
+                   for j in parte):
+                parte.append(i)
+                break
+        else:
+            partes.append([i])
+    if not partes:
+        return [sem]
+    max(partes, key=len).extend(sem)
+    return partes
+
+
+def _ponto(indices: list[int], anuncios: list['_Anuncio']) -> tuple[float, float] | None:
+    pts = [(anuncios[i].lat, anuncios[i].lng) for i in indices if anuncios[i].tem_coord]
+    if not pts:
+        return None
+    return statistics.median(p[0] for p in pts), statistics.median(p[1] for p in pts)
+
+
+def _componentes(grupos: '_Grupos', indices: list[int]) -> dict[int, list[int]]:
+    membros: dict[int, list[int]] = defaultdict(list)
+    for i in indices:
+        membros[grupos.raiz(i)].append(i)
+    return membros
+
+
 def agrupar(itens: list[dict]) -> list[dict]:
     """
-    Liga anúncios do mesmo empreendimento. Grava `grupo_id` em cada item
-    agrupado (None nos demais) e devolve um resumo por grupo com 2+ anúncios,
-    do maior para o menor.
+    Liga anúncios do mesmo empreendimento em três níveis (ver o topo do
+    módulo). Grava em cada item `grupo_id` e `vinculo_grupo` (confirmado |
+    provavel), ou None nos dois, e devolve um resumo por grupo com 2+ anúncios
+    confirmados.
 
     Um anúncio sozinho não é apresentado como empreendimento: a mediana de um
     anúncio é o próprio anúncio, e chamá-la de "preço do prédio" seria afirmar
@@ -438,25 +517,72 @@ def agrupar(itens: list[dict]) -> list[dict]:
     """
     for item in itens:
         item['grupo_id'] = None
+        item['vinculo_grupo'] = None
     if len(itens) < 2:
         return []
 
     anuncios = [_Anuncio(i, item) for i, item in enumerate(itens)]
-    grupos = _Grupos(anuncios)
+    usados: set[int] = set()
+    resumos: list[dict] = []
 
-    # R1 — rua + número. União direta dentro do bloco: a chave já é a regra.
+    def registrar(confirmados: list[int], nivel: str, sinais: set[str], anexos: list[int] = ()) -> dict:
+        resumo = resumir_grupo([itens[i] for i in confirmados], sinais, nivel, [itens[i] for i in anexos])
+        for i in confirmados:
+            itens[i]['grupo_id'], itens[i]['vinculo_grupo'] = resumo['grupo_id'], 'confirmado'
+        for i in anexos:
+            itens[i]['grupo_id'], itens[i]['vinculo_grupo'] = resumo['grupo_id'], 'provavel'
+        usados.update(confirmados)
+        usados.update(anexos)
+        resumos.append(resumo)
+        return resumo
+
+    # ── Nível 1: mesmo prédio (rua + número idênticos) ──
     por_endereco: dict[tuple, list[int]] = defaultdict(list)
     for a in anuncios:
         if a.rua and a.numero:
             por_endereco[(a.cidade, a.rua, a.numero)].append(a.idx)
-    for indices in por_endereco.values():
-        for j in indices[1:]:
-            grupos.unir(indices[0], j, 'endereco')
+    predios = [
+        parte
+        for indices in por_endereco.values() if len(indices) >= 2
+        for parte in _dividir_por_distancia(indices, anuncios) if len(parte) >= 2
+    ]
+    em_predio = {i for parte in predios for i in parte}
 
-    # R2 — coordenada exata. Células de ~110 m; cada ponto entra na sua e nas
-    # 8 vizinhas para não perder pares na fronteira.
-    por_celula: dict[tuple, list[int]] = defaultdict(list)
+    # Anexos prováveis: sem número, no ponto do prédio (mesma rua ou rua
+    # ausente), ou com o mesmo nome no mesmo bairro. Mostrados, fora do preço.
+    anexos: dict[int, list[int]] = defaultdict(list)
+    pontos = [_ponto(parte, anuncios) for parte in predios]
+    ruas = [anuncios[parte[0]].rua for parte in predios]
+    nomes = [{anuncios[i].nome for i in parte if anuncios[i].nome} for parte in predios]
+    bairros = [{anuncios[i].bairro for i in parte if anuncios[i].bairro} for parte in predios]
     for a in anuncios:
+        if a.idx in em_predio or a.numero:
+            continue
+        melhor, melhor_d = None, None
+        if a.tem_coord:
+            for k, pt in enumerate(pontos):
+                if pt is None or (a.rua and a.rua != ruas[k]):
+                    continue
+                d = distancia_m(a.lat, a.lng, pt[0], pt[1])
+                if d <= RAIO_ANEXO_M and (melhor_d is None or d < melhor_d):
+                    melhor, melhor_d = k, d
+        if melhor is None and a.nome and a.bairro:
+            for k in range(len(predios)):
+                if a.bairro in bairros[k] and any(similaridade_nome(a.nome, n) >= LIMIAR_NOME for n in nomes[k]):
+                    melhor = k
+                    break
+        if melhor is not None:
+            anexos[melhor].append(a.idx)
+
+    for k, parte in enumerate(predios):
+        sinais = {'endereco'} | ({'coordenada'} if pontos[k] else set())
+        registrar(parte, NIVEL_PREDIO, sinais, anexos.get(k, []))
+
+    # ── Nível 2: mesmo local (coordenada exata), sobre o que sobrou ──
+    restantes = [a for a in anuncios if a.idx not in usados]
+    local = _Grupos(anuncios)
+    por_celula: dict[tuple, list[int]] = defaultdict(list)
+    for a in restantes:
         if a.tem_coord:
             cy, cx = int(math.floor(a.lat * 1000)), int(math.floor(a.lng * 1000))
             for dy in (-1, 0, 1):
@@ -469,34 +595,29 @@ def agrupar(itens: list[dict]) -> list[dict]:
         if _regra_r2(anuncios[i], anuncios[j])
     ]
     for _, i, j in sorted(pares_r2):
-        grupos.unir(i, j, 'coordenada')
+        local.unir(i, j, 'coordenada')
+    for raiz, indices in _componentes(local, [a.idx for a in restantes]).items():
+        if len(indices) >= 2:
+            registrar(indices, NIVEL_LOCAL, {'coordenada'})
 
-    # R3 — nome. Bloco por palavra distintiva do nome, para casar grafias
-    # parecidas ("Villa Roma" × "Vila Roma") sem comparar todos com todos.
+    # ── Nível 3: mesmo nome, sobre o que sobrou ──
+    restantes = [a for a in anuncios if a.idx not in usados]
+    pelo_nome = _Grupos(anuncios)
     por_palavra: dict[tuple, list[int]] = defaultdict(list)
-    for a in anuncios:
+    for a in restantes:
         if a.nome:
             for t in set(a.nome.split()):
                 if len(t) >= 4:
                     por_palavra[(a.cidade, t)].append(a.idx)
     for i, j in _pares_por_bloco(por_palavra):
         if _regra_r3(anuncios[i], anuncios[j]):
-            grupos.unir(i, j, 'nome')
+            pelo_nome.unir(i, j, 'nome')
+    for raiz, indices in _componentes(pelo_nome, [a.idx for a in restantes]).items():
+        if len(indices) >= 2:
+            registrar(indices, NIVEL_NOME, {'nome'})
 
-    membros: dict[int, list[int]] = defaultdict(list)
-    for a in anuncios:
-        membros[grupos.raiz(a.idx)].append(a.idx)
-
-    resumos = []
-    for raiz, indices in membros.items():
-        if len(indices) < 2:
-            continue
-        resumo = resumir_grupo([itens[i] for i in indices], grupos.sinais.get(raiz))
-        for i in indices:
-            itens[i]['grupo_id'] = resumo['grupo_id']
-        resumos.append(resumo)
-
-    resumos.sort(key=lambda r: (-r['n_unidades'], -r['n_anuncios'], r['preco_m2_mediana']))
+    ordem_nivel = {NIVEL_PREDIO: 0, NIVEL_LOCAL: 1, NIVEL_NOME: 2}
+    resumos.sort(key=lambda r: (ordem_nivel[r['nivel']], -r['n_unidades'], -r['n_anuncios'], r['preco_m2_mediana']))
     return resumos
 
 
@@ -507,5 +628,6 @@ def mediana_por_empreendimento(itens: list[dict], resumos: list[dict]) -> float 
     20 anúncios decide o número da cidade.
     """
     valores = [r['preco_m2_mediana'] for r in resumos]
+    # Anexo provável tem grupo_id: conta pelo prédio, não como anúncio solto.
     valores += [float(i['preco_m2']) for i in itens if not i.get('grupo_id') and i.get('preco_m2')]
     return round(statistics.median(valores), 2) if valores else None

@@ -18,6 +18,8 @@ export interface Empreendimento {
   eh_lancamento?: boolean | null
   /** Empreendimento (prédio) ao qual o anúncio pertence; null = sem outro anúncio ligado. */
   grupo_id?: string | null
+  /** confirmado: conta no preço do grupo; provavel: sem número no ponto do prédio — fora do preço. */
+  vinculo_grupo?: 'confirmado' | 'provavel' | null
   tipo_edificacao: string | null
   latitude: number | null
   longitude: number | null
@@ -109,6 +111,13 @@ export interface BuscaResponse {
 /** Regra que uniu os anúncios do grupo. */
 export type SinalGrupo = 'endereco' | 'coordenada' | 'nome'
 
+/**
+ * Nível de prova do grupo — é a aba onde ele aparece.
+ * mesmo_predio: rua e número idênticos. mesmo_local: mesmo ponto do mapa, sem
+ * número para confirmar. mesmo_nome: só o nome liga os anúncios.
+ */
+export type NivelGrupo = 'mesmo_predio' | 'mesmo_local' | 'mesmo_nome'
+
 export interface GrupoEmpreendimento {
   grupo_id: string
   chave: string
@@ -134,13 +143,18 @@ export interface GrupoEmpreendimento {
   portais: string[]
   eh_lancamento: boolean | null
   /** alta: endereço ou coordenada; media: só o nome. */
-  confianca: 'alta' | 'media'
+  nivel: NivelGrupo
+  confianca: 'alta' | 'media' | 'baixa'
   sinais: SinalGrupo[]
+  /** URLs dos anúncios prováveis (sem número no ponto do prédio) — fora das estatísticas. */
+  anexos: string[]
+  n_provaveis: number
   foto: string | null
 }
 
 /** Por que um anúncio entrou no dossiê. */
-export type MotivoAnuncio = 'endereco' | 'coordenada' | 'mesmo_predio' | 'nome' | 'texto' | 'rua'
+export type MotivoAnuncio =
+  | 'endereco' | 'coordenada' | 'mesmo_predio' | 'mesmo_local' | 'anexo' | 'nome' | 'texto' | 'rua'
 
 export interface AnuncioDossie {
   url_anuncio: string

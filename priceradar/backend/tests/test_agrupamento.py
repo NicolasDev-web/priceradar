@@ -90,7 +90,9 @@ def test_mesma_coordenada_e_mesma_rua_agrupa():
     grupos = agrupar(itens)
     assert len(grupos) == 1
     assert grupos[0]['n_anuncios'] == 3
-    assert grupos[0]['confianca'] == 'alta'
+    # Sem número para conferir, o mesmo ponto é "mesmo local", não prova de prédio.
+    assert grupos[0]['nivel'] == 'mesmo_local'
+    assert grupos[0]['confianca'] == 'media'
     assert grupos[0]['sinais'] == ['coordenada']
     assert len({i['grupo_id'] for i in itens}) == 1
 
@@ -181,7 +183,8 @@ def test_mesmo_nome_no_mesmo_bairro_agrupa_sem_endereco():
     ]
     grupos = agrupar(itens)
     assert len(grupos) == 1
-    assert grupos[0]['confianca'] == 'media'
+    assert grupos[0]['nivel'] == 'mesmo_nome'
+    assert grupos[0]['confianca'] == 'baixa'
     assert grupos[0]['nome'] in ('Condomínio Reserva Árvoredo', 'condomínio Reserva Arvoredo', 'Residencial Reserva Arvoredo')
 
 
@@ -210,16 +213,109 @@ def test_nomes_diferentes_no_mesmo_ponto_nao_agrupam():
     assert agrupar(itens) == []
 
 
-def test_nome_liga_anuncio_sem_coordenada_ao_grupo_da_coordenada():
+def test_nome_vira_anexo_provavel_do_predio_confirmado():
+    """OLX com o nome do prédio confirmado, no mesmo bairro: anexo, fora do preço."""
+    itens = [
+        anuncio(600_000, 60, lat=-3.7461, lng=-38.4710, endereco='Rua A, 10', nome='Edifício Beach Class'),
+        anuncio(660_000, 60, lat=-3.7461, lng=-38.4710, endereco='Rua A, 10'),
+        anuncio(300_000, 60, nome='Edifício Beach Class', bairro='Cocó', portal='olx'),
+    ]
+    grupos = agrupar(itens)
+    assert len(grupos) == 1
+    g = grupos[0]
+    assert g['nivel'] == 'mesmo_predio' and g['n_anuncios'] == 2 and g['n_provaveis'] == 1
+    assert itens[2]['vinculo_grupo'] == 'provavel'
+    assert g['preco_m2_mediana'] == pytest.approx(10_500)   # o anexo (5.000/m²) não entra
+
+
+def test_nome_nao_se_anexa_a_grupo_so_de_localizacao():
+    """Só o prédio confirmado (endereço) recebe anexos; abas não se misturam."""
     itens = [
         anuncio(lat=-3.7461, lng=-38.4710, endereco='Rua A', nome='Edifício Beach Class'),
         anuncio(lat=-3.7461, lng=-38.4710, endereco='Rua A'),
         anuncio(nome='Edifício Beach Class', bairro='Cocó', portal='olx'),
     ]
     grupos = agrupar(itens)
-    assert len(grupos) == 1
-    assert grupos[0]['n_anuncios'] == 3
-    assert set(grupos[0]['sinais']) == {'coordenada', 'nome'}
+    assert [(g['nivel'], g['n_anuncios']) for g in grupos] == [('mesmo_local', 2)]
+    assert itens[2]['grupo_id'] is None
+
+
+# ── Níveis (abas) ────────────────────────────────────────────────────────────
+
+def test_zero_a_esquerda_no_numero():
+    """'Raimundo Girão, 0630' e ', 630' (medido em 15/10)."""
+    assert normalizar_rua('Avenida Historiador Raimundo Girão, 0630') == normalizar_rua(
+        'Avenida Historiador Raimundo Girão, 630')
+
+
+def test_mesmo_endereco_e_mesmo_predio():
+    itens = [
+        anuncio(lat=-3.7255, lng=-38.50183, endereco='Avenida da Abolição, 1898', portal='vivareal'),
+        anuncio(lat=-3.7255, lng=-38.50183, endereco='Av. da Abolição, 1898', portal='zapimoveis'),
+    ]
+    g = agrupar(itens)[0]
+    assert g['nivel'] == 'mesmo_predio' and g['confianca'] == 'alta'
+    assert all(i['vinculo_grupo'] == 'confirmado' for i in itens)
+
+
+def test_mesmo_ponto_enderecos_diferentes_nao_e_mesmo_predio():
+    """Medido: 'Rua A, 298' e 'Rua B, 100' no mesmo ponto exato."""
+    itens = [
+        anuncio(lat=-3.82086, lng=-38.50859, endereco='Rua A, 298'),
+        anuncio(lat=-3.82086, lng=-38.50859, endereco='Rua B, 100'),
+    ]
+    assert agrupar(itens) == []
+
+
+def test_mesmo_endereco_com_pontos_distantes_se_divide():
+    itens = [
+        anuncio(lat=-3.7461, lng=-38.4710, endereco='Rua A, 10'),
+        anuncio(lat=-3.7461, lng=-38.4710, endereco='Rua A, 10'),
+        anuncio(lat=-3.7600, lng=-38.4710, endereco='Rua A, 10'),   # ~1,5 km: erro de digitação
+    ]
+    grupos = agrupar(itens)
+    assert [(g['nivel'], g['n_anuncios']) for g in grupos] == [('mesmo_predio', 2)]
+    assert itens[2]['grupo_id'] is None
+
+
+def test_anexo_sem_numero_fica_fora_da_mediana():
+    itens = [
+        anuncio(600_000, 60, lat=-3.7461, lng=-38.4710, endereco='Rua A, 10'),
+        anuncio(660_000, 60, lat=-3.7461, lng=-38.4710, endereco='Rua A, 10'),
+        anuncio(240_000, 60, lat=-3.74611, lng=-38.47101, endereco='Rua A'),   # sem número, ~1 m
+    ]
+    g = agrupar(itens)[0]
+    assert g['n_anuncios'] == 2 and g['n_provaveis'] == 1
+    assert g['anexos'] == [itens[2]['url_anuncio']]
+    assert g['preco_m2_mediana'] == pytest.approx(10_500)
+    assert itens[2]['vinculo_grupo'] == 'provavel' and itens[2]['grupo_id'] == g['grupo_id']
+    # Na mediana da cidade o anexo conta pelo prédio, não como anúncio solto.
+    assert mediana_por_empreendimento(itens, [g]) == pytest.approx(10_500)
+
+
+def test_anexo_de_outra_rua_nao_entra():
+    itens = [
+        anuncio(lat=-3.7461, lng=-38.4710, endereco='Rua A, 10'),
+        anuncio(lat=-3.7461, lng=-38.4710, endereco='Rua A, 10'),
+        anuncio(lat=-3.7461, lng=-38.4710, endereco='Rua B'),
+    ]
+    g = agrupar(itens)[0]
+    assert g['n_provaveis'] == 0 and itens[2]['grupo_id'] is None
+
+
+def test_cada_anuncio_em_no_maximo_um_grupo():
+    itens = [
+        anuncio(lat=-3.7461, lng=-38.4710, endereco='Rua A, 10'),
+        anuncio(lat=-3.7461, lng=-38.4710, endereco='Rua A, 10'),
+        anuncio(lat=-3.7500, lng=-38.4800, endereco='Rua C'),
+        anuncio(lat=-3.7500, lng=-38.4800, endereco='Rua C'),
+        anuncio(nome='Condomínio Villa Venezia', bairro='Messejana', portal='olx'),
+        anuncio(nome='Villa Venezia', bairro='Messejana', portal='olx'),
+    ]
+    grupos = agrupar(itens)
+    assert [g['nivel'] for g in grupos] == ['mesmo_predio', 'mesmo_local', 'mesmo_nome']
+    contagem = sum(g['n_anuncios'] + g['n_provaveis'] for g in grupos)
+    assert contagem == len({i['url_anuncio'] for i in itens if i['grupo_id']}) == 6
 
 
 # ── Estatística ──────────────────────────────────────────────────────────────

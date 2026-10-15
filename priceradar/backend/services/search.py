@@ -183,6 +183,7 @@ def aplicar_agrupamento(resposta: BuscaResponse) -> BuscaResponse:
     resumos = agrupar(itens)
     for emp, item in zip(resposta.empreendimentos, itens):
         emp.grupo_id = item['grupo_id']
+        emp.vinculo_grupo = item['vinculo_grupo']
         emp.nome_empreendimento = item['nome_empreendimento']
         emp.eh_lancamento = item['eh_lancamento']
     resposta.grupos = [GrupoEmpreendimento(**r) for r in resumos]

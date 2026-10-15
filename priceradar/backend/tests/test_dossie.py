@@ -269,3 +269,46 @@ def test_no_ar_e_relativo_a_ultima_coleta_do_bairro():
         return await dossie.procurar_empreendimento(db, 'Fortaleza, CE', 'Reserva Arvoredo', None)
     r = com_banco(corpo)
     assert r['ativos'] == 2
+
+
+# ── Níveis no dossiê ─────────────────────────────────────────────────────────
+
+NUMERADO = dict(lat=-3.7461, lng=-38.4710, endereco='Rua Vilebaldo Aguiar, 1000')
+
+
+def test_procura_com_numero_so_confirma_o_endereco_exato():
+    """Anúncio sem número no mesmo ponto: provável, fora do preço."""
+    async def corpo(db):
+        await gravar(db, [
+            emp('n1', 600_000, **NUMERADO), emp('n2', 660_000, **NUMERADO),
+            emp('ponto', 300_000, **PREDIO),          # mesmo ponto, sem número
+        ])
+        return await dossie.procurar_empreendimento(db, 'Fortaleza, CE', None, 'Rua Vilebaldo Aguiar, 1000')
+    r = com_banco(corpo)
+    assert {a['url_anuncio'] for a in r['anuncios']} == {'n1', 'n2'}
+    assert r['grupo']['nivel'] == 'mesmo_predio'
+    assert [a['url_anuncio'] for a in r['provaveis']] == ['ponto']
+    assert r['grupo']['preco_m2_mediana'] == pytest.approx(10_500)
+
+
+def test_procura_sem_endereco_exato_no_historico_sai_como_mesmo_local():
+    async def corpo(db):
+        await gravar(db, [emp('u1', 600_000, **PREDIO), emp('u2', 640_000, 64, **PREDIO)])
+        return await dossie.procurar_empreendimento(db, 'Fortaleza, CE', None, 'Rua Vilebaldo Aguiar, 1000')
+    r = com_banco(corpo)
+    assert r['grupo']['nivel'] == 'mesmo_local'
+
+
+def test_dossie_do_predio_lista_anexos_como_provaveis():
+    async def corpo(db):
+        resp = await gravar(db, [
+            emp('n1', 600_000, **NUMERADO), emp('n2', 660_000, **NUMERADO),
+            emp('ponto', 300_000, **PREDIO),
+        ])
+        g = resp.grupos[0]
+        assert g.nivel == 'mesmo_predio' and g.n_provaveis == 1
+        return await dossie.montar_dossie(db, 'Fortaleza, CE', g.grupo_id)
+    d = com_banco(corpo)
+    assert {a['url_anuncio'] for a in d['anuncios']} == {'n1', 'n2'}
+    assert [(a['url_anuncio'], a['motivo']) for a in d['provaveis']] == [('ponto', 'anexo')]
+    assert d['grupo']['nivel'] == 'mesmo_predio' and d['grupo']['n_provaveis'] == 1

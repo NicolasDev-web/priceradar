@@ -246,6 +246,8 @@ ponto da Rua Vilebaldo Aguiar). Avaliação: `scripts/avaliar_agrupamento.py`.
 | F7.5 ✅ | Excel: aba EMPREENDIMENTOS (contagem e média por fórmula sobre a nova coluna Prédio da base; mediana por unidade como valor) e linha no INICIO. | `services/export.py` |
 | F7.6 ✅ | OLX medida em 15/10: **não** publica rua nem CEP (só município/bairro/UF). A busca por texto funciona: `?q=reserva+arvoredo` → 50 anúncios, 50 citando o nome. Ligada na procura por nome com coleta (`HABILITAR_OLX_BUSCA_NOME`, 2 páginas), sem gravar como busca. | `scraper/olximoveis.py`, `main.py` |
 
+| F7.7 ✅ | Abas por nível de prova (tela e Excel): **Mesmo prédio** (rua + número idênticos; anúncio sem número no mesmo ponto vira "provável", fora do preço), **Mesmo local** (só coordenada) e **Mesmo nome**. Cada anúncio em no máximo um grupo. Medido em 15/10: 26 prédios exatos (68 anúncios), nenhum com dois endereços; o mesmo ponto já juntou "Rua A, 298" e "Rua B, 100", por isso coordenada não basta. | `services/agrupamento.py`, `services/dossie.py`, `services/export.py`, `frontend/src/` |
+
 **Verificado ao vivo (15/10/2026):** busca real no Cocó trouxe endereço com número em 7/7 VivaReal e
 4/4 ZAP (antes: 24 de 3.906), CEP em 4/4 ChavesNaMão (o Grupo ZAP não publica CEP). Nominatim:
 número achado em 4 de 7 endereços de Fortaleza, ponto a ~6 m do publicado pelo portal; sem número,

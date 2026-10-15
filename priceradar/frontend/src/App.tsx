@@ -3,7 +3,7 @@ import { AlertTriangle, Clock, Download, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buscarConcorrentes, exportarExcel } from './api/client'
 import { ComparativoBairros } from './components/ComparativoBairros'
-import { EmpreendimentoCard } from './components/EmpreendimentoCard'
+import { EmpreendimentoCard, NIVEL_INFO } from './components/EmpreendimentoCard'
 import { EmpreendimentoPanel, type PedidoDossie } from './components/EmpreendimentoPanel'
 import { EvolucaoBairrosChart } from './components/EvolucaoBairrosChart'
 import { EvolucaoChart } from './components/EvolucaoChart'
@@ -19,7 +19,7 @@ import { ResultCard } from './components/ResultCard'
 import { ResumoMudancas } from './components/ResumoMudancas'
 import { SearchForm } from './components/SearchForm'
 import { LABEL_PORTAL, PORTAL_CONFIG } from './data/portais'
-import type { BuscaRequest, BuscaResponse, BuscaSalva, GrupoEmpreendimento, ProcurarEmpreendimentoRequest } from './types'
+import type { BuscaRequest, BuscaResponse, BuscaSalva, GrupoEmpreendimento, NivelGrupo, ProcurarEmpreendimentoRequest } from './types'
 import { ordenar, type CriterioOrdem, type Direcao } from './utils/ordenacao'
 
 // Abaixo disso a mediana oscila demais com um anúncio a mais ou a menos.
@@ -64,11 +64,24 @@ export default function App() {
     () => new Map((resultado?.grupos ?? []).map(g => [g.grupo_id, g])),
     [resultado],
   )
+  // Aba de nível dentro da vista Empreendimentos: o exato mesmo prédio primeiro.
+  const [abaNivel, setAbaNivel] = useState<NivelGrupo>('mesmo_predio')
+  const contagemNivel = useMemo(() => {
+    const c: Record<NivelGrupo, number> = { mesmo_predio: 0, mesmo_local: 0, mesmo_nome: 0 }
+    for (const g of resultado?.grupos ?? []) c[g.nivel ?? 'mesmo_nome'] += 1
+    return c
+  }, [resultado])
+  // A cada resultado, abre na aba mais forte que tem grupo — busca antiga do
+  // cache (sem número de porta) não tem "Mesmo prédio" e abriria vazia.
+  useEffect(() => {
+    const primeira = (['mesmo_predio', 'mesmo_local', 'mesmo_nome'] as NivelGrupo[]).find(nv => contagemNivel[nv] > 0)
+    setAbaNivel(primeira ?? 'mesmo_predio')
+  }, [contagemNivel])
   const gruposOrdenados = useMemo(() => {
-    const gs = [...(resultado?.grupos ?? [])]
+    const gs = (resultado?.grupos ?? []).filter(g => (g.nivel ?? 'mesmo_nome') === abaNivel)
     gs.sort((a, b) => (direcao === 'asc' ? 1 : -1) * (a.preco_m2_mediana - b.preco_m2_mediana))
     return gs
-  }, [resultado, direcao])
+  }, [resultado, direcao, abaNivel])
   // Dossiê do empreendimento: aberto por um card/selo (grupo) ou pela procura
   // por nome/endereço. A cidade vai junto porque a procura pode vir antes de
   // qualquer busca.
@@ -398,7 +411,7 @@ export default function App() {
                     {/* Anúncio ≠ empreendimento: um prédio pode ter vários anúncios. */}
                     <h2 className="text-[11px] font-bold text-mrv-text-dim uppercase tracking-[0.1em]">
                       {resultado.total} anúncio{resultado.total !== 1 ? 's' : ''}
-                      {' · '}{(resultado.grupos ?? []).length} prédio{(resultado.grupos ?? []).length !== 1 ? 's' : ''} com 2+ anúncios
+                      {' · '}{contagemNivel.mesmo_predio} prédio{contagemNivel.mesmo_predio !== 1 ? 's' : ''} com 2+ anúncios
                     </h2>
                     <div role="tablist" aria-label="Ver por" className="flex border border-mrv-border rounded-card overflow-hidden text-[11px]">
                       {(['anuncios', 'empreendimentos'] as const).map(v => (
@@ -441,14 +454,34 @@ export default function App() {
 
                 {vista === 'empreendimentos' ? (
                   <>
-                    <p className="text-[11px] text-mrv-text-dim mt-1 mb-2">
-                      Anúncios do mesmo prédio juntos — pelo endereço, pela localização no mapa ou pelo nome.
-                      Os {resultado.total - (resultado.grupos ?? []).reduce((n, g) => n + g.n_anuncios, 0)} anúncios
-                      sem outro do mesmo prédio aparecem só em “Anúncios”.
+                    {/* Uma aba por nível de prova: quem lê escolhe o quanto quer
+                        de certeza, em vez de um grupo só que mistura prova e palpite. */}
+                    <div role="tablist" aria-label="Tipo de agrupamento" className="flex flex-wrap gap-1.5 mt-1 mb-2">
+                      {(Object.keys(NIVEL_INFO) as NivelGrupo[]).map(nv => (
+                        <button
+                          key={nv}
+                          type="button"
+                          role="tab"
+                          aria-selected={abaNivel === nv}
+                          onClick={() => setAbaNivel(nv)}
+                          className={`text-[11px] font-semibold px-3 py-1.5 rounded-card border transition-colors ${abaNivel === nv
+                            ? 'bg-mrv-green text-white border-mrv-green'
+                            : 'text-mrv-text-muted border-mrv-border hover:text-mrv-text'}`}
+                        >
+                          {NIVEL_INFO[nv].rotulo} ({contagemNivel[nv]})
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-mrv-text-dim mb-2">
+                      {NIVEL_INFO[abaNivel].explicacao}
+                      {abaNivel === 'mesmo_predio' && (
+                        <> Só VivaReal, ZAP e ChavesNaMão publicam o número — anúncios da OLX não entram nesta aba
+                        (aparecem em “Mesmo nome”). Anúncio sem número no mesmo ponto aparece como “provável”, fora do preço.</>
+                      )}
                     </p>
                     {gruposOrdenados.length === 0 ? (
                       <p className="text-sm text-mrv-text-muted bg-mrv-surface border border-mrv-border rounded-card px-4 py-6 text-center">
-                        Nenhum prédio com mais de um anúncio nesta busca. Use “Procurar empreendimento” para buscar no histórico.
+                        Nenhum grupo deste tipo nesta busca. Use “Procurar empreendimento” para buscar no histórico.
                       </p>
                     ) : (
                       <div key={`g${buscaVersion}`} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

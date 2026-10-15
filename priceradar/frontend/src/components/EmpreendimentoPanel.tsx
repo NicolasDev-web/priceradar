@@ -14,7 +14,7 @@ import type {
   ProcurarEmpreendimentoRequest,
 } from '../types'
 import { descricaoSemana, formatarMoeda, rotuloSemana } from '../utils/evolucao'
-import { SeloConfianca, SeloLancamento, tituloGrupo } from './EmpreendimentoCard'
+import { NIVEL_INFO, SeloLancamento, SeloNivel, tituloGrupo } from './EmpreendimentoCard'
 
 // Mesma duração do HistoricoPanel (`drawer-out` no tailwind.config.ts).
 const DRAWER_EXIT_MS = 180
@@ -40,6 +40,8 @@ const ROTULO_MOTIVO: Record<MotivoAnuncio, string> = {
   endereco: 'mesmo endereço',
   coordenada: 'mesmo ponto no mapa',
   mesmo_predio: 'mesmo prédio',
+  mesmo_local: 'mesmo local',
+  anexo: 'sem número, no ponto do prédio',
   nome: 'mesmo nome',
   texto: 'nome citado no anúncio',
   rua: 'mesma rua',
@@ -270,7 +272,7 @@ export function EmpreendimentoPanel({ isOpen, cidade, pedido, precoM2Referencia,
             {g ? (
               <>
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <SeloConfianca grupo={g} />
+                  <SeloNivel grupo={g} />
                   <SeloLancamento valor={g.eh_lancamento} />
                   {g.construtora && (
                     <span className="text-[10px] font-medium text-mrv-text-muted bg-mrv-surface-2/60 px-2 py-0.5 rounded-full">{g.construtora}</span>
@@ -369,12 +371,12 @@ export function EmpreendimentoPanel({ isOpen, cidade, pedido, precoM2Referencia,
                   aria-expanded={verProvaveis}
                 >
                   <ChevronDown size={12} className={`transition-transform ${verProvaveis ? '' : '-rotate-90'}`} />
-                  Talvez sejam deste empreendimento ({dados.provaveis.length})
+                  {g?.nivel === 'mesmo_predio' ? 'Prováveis deste prédio' : 'Talvez sejam deste empreendimento'} ({dados.provaveis.length})
                 </button>
                 {verProvaveis && (
                   <>
                     <p className="text-[10px] text-mrv-text-dim mt-1">
-                      Fora das estatísticas: só a rua ou uma menção ao nome ligam estes anúncios ao que foi procurado.
+                      Fora do preço: anúncios sem número no ponto do prédio, ou ligados só pela rua ou por uma menção ao nome.
                     </p>
                     <ul>{dados.provaveis.map(a => <LinhaAnuncio key={a.url_anuncio} a={a} />)}</ul>
                   </>

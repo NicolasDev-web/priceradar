@@ -1,7 +1,7 @@
 import { Bath, BedDouble, Building2, Car, ExternalLink, MapPin } from 'lucide-react'
 import type { Empreendimento, GrupoEmpreendimento } from '../types'
 import { desvioPercentual, faixaPorDesvio, rotuloDesvio } from '../utils/posicionamento'
-import { SeloLancamento } from './EmpreendimentoCard'
+import { NIVEL_INFO, SeloLancamento } from './EmpreendimentoCard'
 import { FotoCarrossel } from './FotoCarrossel'
 import { VariacaoMRVBadge } from './VariacaoMRVBadge'
 
@@ -211,7 +211,10 @@ export function ResultCard({ empreendimento: e, precoM2Medio, indice = 0, grupo,
             >
               <Building2 size={11} className="text-mrv-text-dim flex-shrink-0" />
               <span className="truncate">
-                Mesmo prédio: <strong className="text-mrv-text">{grupo.n_anuncios} anúncios</strong>
+                {e.vinculo_grupo === 'provavel'
+                  ? 'Provável do prédio (sem número): '
+                  : `${(NIVEL_INFO[grupo.nivel] ?? NIVEL_INFO.mesmo_nome).rotulo}: `}
+                <strong className="text-mrv-text">{grupo.n_anuncios} anúncios</strong>
                 {' · mediana '}{formatarMoeda(grupo.preco_m2_mediana)}/m²
               </span>
               {grupo.preco_m2_mediana > 0 && (() => {

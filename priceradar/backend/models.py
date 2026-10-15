@@ -21,6 +21,9 @@ class Empreendimento(BaseModel):
     # entre buscas. None = não foi possível ligar a nenhum outro anúncio.
     # Ver services/agrupamento.py.
     grupo_id: str | None = None
+    # confirmado: conta no preço do grupo. provavel: anúncio sem número no
+    # ponto de um prédio confirmado (ou com o nome dele) — mostrado, fora do preço.
+    vinculo_grupo: str | None = None
     # torre | provavel_bloco | indefinido. Ver classificar_edificacao() em
     # scraper/parser.py — 'indefinido' é ausência de dado, não de elevador.
     tipo_edificacao: str | None = None
@@ -107,12 +110,19 @@ class GrupoEmpreendimento(BaseModel):
     quartos: list[int] = []
     portais: list[str] = []
     eh_lancamento: bool | None = None
-    # alta: endereço com número ou coordenada exata ligaram os anúncios.
-    # media: só o nome — dois "Residencial Jardins" no mesmo bairro existem.
+    # mesmo_predio: rua + número idênticos (o exato mesmo prédio).
+    # mesmo_local: mesma coordenada exata, sem número para confirmar.
+    # mesmo_nome: só o nome — pode ser condomínio de várias torres ou homônimo.
+    nivel: str = 'mesmo_nome'
+    # alta | media | baixa — acompanha o nível.
     confianca: str
     # Regras que uniram: endereco | coordenada | nome.
     sinais: list[str] = []
     foto: str | None = None
+    # Prováveis (só em mesmo_predio): sem número no ponto do prédio, ou com o
+    # nome dele no mesmo bairro. URLs, fora das estatísticas.
+    anexos: list[str] = []
+    n_provaveis: int = 0
 
 
 class DiagnosticoColeta(BaseModel):

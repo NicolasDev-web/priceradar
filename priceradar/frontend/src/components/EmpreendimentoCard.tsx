@@ -1,6 +1,6 @@
 import { Building2, ChevronRight, MapPin } from 'lucide-react'
 import { LABEL_PORTAL } from '../data/portais'
-import type { GrupoEmpreendimento, SinalGrupo } from '../types'
+import type { GrupoEmpreendimento, NivelGrupo, SinalGrupo } from '../types'
 import { desvioPercentual, faixaPorDesvio, rotuloDesvio } from '../utils/posicionamento'
 import { FotoCarrossel } from './FotoCarrossel'
 
@@ -36,18 +36,35 @@ export function tituloGrupo(g: GrupoEmpreendimento): string {
   return g.nome || g.endereco || (g.bairro ? `Prédio no ${g.bairro}` : 'Empreendimento sem nome')
 }
 
-/** "Alta" / "Média" + o porquê, para quem lê não tomar palpite por fato. */
-export function SeloConfianca({ grupo }: { grupo: GrupoEmpreendimento }) {
-  const alta = grupo.confianca === 'alta'
+/** O que cada nível prova — rótulo das abas, dos selos e do dossiê. */
+export const NIVEL_INFO: Record<NivelGrupo, { rotulo: string; cor: string; explicacao: string }> = {
+  mesmo_predio: {
+    rotulo: 'Mesmo prédio',
+    cor: 'bg-emerald-900/40 text-emerald-300 border-emerald-700/40',
+    explicacao: 'Rua e número idênticos: o exato mesmo prédio.',
+  },
+  mesmo_local: {
+    rotulo: 'Mesmo local',
+    cor: 'bg-sky-900/40 text-sky-300 border-sky-700/40',
+    explicacao: 'Mesmo ponto do mapa publicado pelo portal, sem número para confirmar. Provável, não prova: o portal às vezes põe prédios vizinhos no mesmo ponto.',
+  },
+  mesmo_nome: {
+    rotulo: 'Mesmo nome',
+    cor: 'bg-amber-900/40 text-amber-300 border-amber-700/40',
+    explicacao: 'Ligados só pelo nome do empreendimento. Confira: pode ser um condomínio com várias torres ou dois empreendimentos com o mesmo nome.',
+  },
+}
+
+/** Nível de prova do grupo, com o porquê no tooltip — palpite não passa por fato. */
+export function SeloNivel({ grupo }: { grupo: GrupoEmpreendimento }) {
+  const info = NIVEL_INFO[grupo.nivel] ?? NIVEL_INFO.mesmo_nome
   const motivo = grupo.sinais.map(s => ROTULO_SINAL[s]).join(' + ')
   return (
     <span
-      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${alta
-        ? 'bg-emerald-900/40 text-emerald-300 border-emerald-700/40'
-        : 'bg-amber-900/40 text-amber-300 border-amber-700/40'}`}
-      title={`Agrupados por ${motivo}.${alta ? '' : ' Só o nome liga estes anúncios — confira os endereços.'}`}
+      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${info.cor}`}
+      title={`${info.explicacao}${motivo ? ` Ligados por: ${motivo}.` : ''}`}
     >
-      {alta ? 'Agrupamento firme' : 'Agrupado pelo nome'}
+      {info.rotulo}
     </span>
   )
 }
@@ -104,7 +121,7 @@ export function EmpreendimentoCard({ grupo: g, precoM2Medio, onAbrir, indice = 0
           </div>
 
           <div className="flex items-center flex-wrap gap-1.5 mb-3">
-            <SeloConfianca grupo={g} />
+            <SeloNivel grupo={g} />
             <SeloLancamento valor={g.eh_lancamento} />
             {g.construtora && (
               <span className="text-[10px] font-medium text-mrv-text-muted bg-mrv-surface-2/60 px-2 py-0.5 rounded-full">{g.construtora}</span>
@@ -124,6 +141,12 @@ export function EmpreendimentoCard({ grupo: g, precoM2Medio, onAbrir, indice = 0
             {areas && <span>{areas}</span>}
             {quartos && <span>{quartos}</span>}
           </div>
+          {g.n_provaveis > 0 && (
+            <p className="-mt-2 mb-3 text-[10px] text-mrv-text-dim"
+               title="Anúncios sem número no mesmo ponto do mapa (ou com o nome deste prédio no mesmo bairro). Aparecem no dossiê, mas não entram no preço.">
+              +{g.n_provaveis} provável{g.n_provaveis === 1 ? '' : 'is'} (sem número no anúncio) — fora do preço
+            </p>
+          )}
 
           <div className="mt-auto flex items-end justify-between gap-2">
             <div>

@@ -27,6 +27,9 @@ from datetime import datetime, timedelta
 from scraper.parser import revisar_empreendimento_gravado
 from scraper.rsc_grupozap import chave_url
 from services.agrupamento import (
+    NIVEL_LOCAL,
+    NIVEL_NOME,
+    NIVEL_PREDIO,
     RAIO_NOME_M,
     agrupar,
     distancia_m,
@@ -44,7 +47,18 @@ from services.texto import normalizar
 JANELA_ATIVO = timedelta(days=14)
 MAX_PROVAVEIS = 60
 
-_ORDEM_MOTIVO = {'endereco': 0, 'coordenada': 1, 'mesmo_predio': 2, 'nome': 3, 'texto': 4, 'rua': 5}
+_ORDEM_MOTIVO = {'endereco': 0, 'mesmo_predio': 1, 'coordenada': 2, 'mesmo_local': 3, 'anexo': 4,
+                 'nome': 5, 'texto': 6, 'rua': 7}
+
+# Que nível cada motivo de confirmação prova. O dossiê assume o nível do elo
+# MAIS FRACO entre os confirmados: um "mesmo prédio" com um anúncio que só
+# casou pelo nome já não é "exato mesmo prédio".
+_NIVEL_DO_MOTIVO = {
+    'endereco': NIVEL_PREDIO, 'mesmo_predio': NIVEL_PREDIO,
+    'coordenada': NIVEL_LOCAL, 'mesmo_local': NIVEL_LOCAL,
+    'nome': NIVEL_NOME, 'texto': NIVEL_NOME,
+}
+_ORDEM_NIVEL = [NIVEL_PREDIO, NIVEL_LOCAL, NIVEL_NOME]
 
 
 def preparar_historico(itens: list[dict]) -> list[dict]:
@@ -123,19 +137,27 @@ def _ultimas_coletas(itens: list[dict]) -> dict[tuple[str, str], object]:
     return ultimas
 
 
-def _membros_por_grupo(itens: list[dict]) -> tuple[dict[str, list[dict]], dict[str, dict]]:
+def _membros_por_grupo(itens: list[dict]):
+    """(confirmados por grupo, anexos prováveis por grupo, resumos por grupo)."""
     resumos = {r['grupo_id']: r for r in agrupar(itens)}
     membros: dict[str, list[dict]] = defaultdict(list)
+    anexos: dict[str, list[dict]] = defaultdict(list)
     for i in itens:
         if i.get('grupo_id'):
-            membros[i['grupo_id']].append(i)
-    return membros, resumos
+            (anexos if i.get('vinculo_grupo') == 'provavel' else membros)[i['grupo_id']].append(i)
+    return membros, anexos, resumos
+
+
+def _nivel_mais_fraco(motivos: list[str], padrao: str) -> str:
+    niveis = [_NIVEL_DO_MOTIVO[m] for m in motivos if m in _NIVEL_DO_MOTIVO]
+    return max(niveis, key=_ORDEM_NIVEL.index) if niveis else padrao
 
 
 async def _montar_resposta(db, cidade: str, itens_hist: list[dict], escolhidos: list[dict],
-                           motivos: dict[str, str], sinais: set[str], provaveis: list[dict] | None = None) -> dict:
+                           motivos: dict[str, str], sinais: set[str], provaveis: list[dict] | None = None,
+                           nivel: str | None = None) -> dict:
     ultima = _ultimas_coletas(itens_hist)
-    resumo = resumir_grupo(escolhidos, sinais) if escolhidos else None
+    resumo = resumir_grupo(escolhidos, sinais, nivel, provaveis) if escolhidos else None
     mediana = resumo['preco_m2_mediana'] if resumo else None
     anuncios = sorted(
         (_anuncio_saida(i, mediana, ultima, motivos.get(i['url_anuncio'])) for i in escolhidos),
@@ -178,7 +200,7 @@ async def montar_dossie(db, cidade: str, grupo_id: str) -> dict | None:
     itens = preparar_historico(await historico_da_cidade(db, cidade))
     if not itens:
         return None
-    membros, resumos = _membros_por_grupo(itens)
+    membros, anexos, resumos = _membros_por_grupo(itens)
 
     gravados = [i for i in itens if grupo_id in (i.get('grupos_gravados') or ())]
     votos = defaultdict(int)
@@ -188,14 +210,19 @@ async def montar_dossie(db, cidade: str, grupo_id: str) -> dict | None:
     alvo = max(votos, key=votos.get) if votos else (grupo_id if grupo_id in membros else None)
 
     escolhidos = {i['url_anuncio']: i for i in membros.get(alvo, [])}
+    provaveis = {i['url_anuncio']: i for i in anexos.get(alvo, [])}
     # O que a busca agrupou e o histórico não (trava de conflito com mais
     # dados) continua no dossiê: foi o que o usuário viu junto na tela.
     for i in gravados:
-        escolhidos.setdefault(i['url_anuncio'], i)
+        if i['url_anuncio'] not in provaveis:
+            escolhidos.setdefault(i['url_anuncio'], i)
     if not escolhidos:
         return None
     sinais = set(resumos[alvo]['sinais']) if alvo in resumos else {'busca'}
-    return await _montar_resposta(db, cidade, itens, list(escolhidos.values()), {}, sinais)
+    nivel = resumos[alvo]['nivel'] if alvo in resumos else NIVEL_NOME
+    motivos = {u: 'anexo' for u in provaveis}
+    return await _montar_resposta(db, cidade, itens, list(escolhidos.values()), motivos, sinais,
+                                  list(provaveis.values()), nivel)
 
 
 # ── Busca por nome ou endereço ───────────────────────────────────────────────
@@ -293,7 +320,7 @@ async def procurar_empreendimento(
     itens = preparar_historico(await historico_da_cidade(db, cidade))
     if coletados:
         itens = mesclar_coletados(itens, coletados)
-    membros, resumos = _membros_por_grupo(itens)
+    membros, anexos, resumos = _membros_por_grupo(itens)
 
     por_url_0 = {i['url_anuncio']: i for i in itens}
     motivos: dict[str, str] = {}
@@ -303,6 +330,12 @@ async def procurar_empreendimento(
             motivos[item['url_anuncio']] = motivo
 
     fortes = {'endereco', 'coordenada', 'nome'}
+    # Endereço com número e algum anúncio nele: só esse endereço é o prédio.
+    # Quem apenas cai no mesmo ponto vira provável — o mesmo ponto já juntou
+    # "Rua A, 298" e "Rua B, 100" (medido). Sem anúncio no endereço exato, o
+    # ponto confirma, e a resposta sai como "mesmo local".
+    if alvo['numero'] and 'endereco' in motivos.values():
+        fortes = {'endereco', 'nome'}
     confirmados = {u for u, m in motivos.items() if m in fortes}
     # Nome sem lugar para conferir (nada de endereço nem bairro informados):
     # o bairro predominante entre os que casaram pelo nome decide; os demais
@@ -324,12 +357,19 @@ async def procurar_empreendimento(
     por_url = {i['url_anuncio']: i for i in itens}
     for u in list(confirmados):
         gid = por_url[u].get('grupo_id')
+        if gid not in resumos or por_url[u].get('vinculo_grupo') == 'provavel':
+            continue
+        nivel_grupo = resumos[gid]['nivel']
+        motivo_grupo = {NIVEL_PREDIO: 'mesmo_predio', NIVEL_LOCAL: 'mesmo_local'}.get(nivel_grupo, 'nome')
         for m in membros.get(gid, []):
             if m['url_anuncio'] not in confirmados:
                 confirmados.add(m['url_anuncio'])
-                motivos.setdefault(m['url_anuncio'], 'mesmo_predio')
-        if gid in resumos:
-            sinais |= set(resumos[gid]['sinais'])
+                motivos.setdefault(m['url_anuncio'], motivo_grupo)
+        # Anexos do prédio: prováveis, fora do preço.
+        for m in anexos.get(gid, []):
+            if m['url_anuncio'] not in confirmados:
+                motivos[m['url_anuncio']] = 'anexo'
+        sinais |= set(resumos[gid]['sinais'])
     sinais &= {'endereco', 'coordenada', 'nome'}
 
     # O nome digitado no texto do anúncio ("Villa Venezia liga 9 87…", sem
@@ -350,8 +390,9 @@ async def procurar_empreendimento(
         key=lambda i: (_ORDEM_MOTIVO.get(motivos[i['url_anuncio']], 9), i.get('preco_m2') or 0),
     )[:MAX_PROVAVEIS]
 
+    nivel = _nivel_mais_fraco([motivos[u] for u in confirmados], NIVEL_NOME)
     resposta = await _montar_resposta(
-        db, cidade, itens, [por_url[u] for u in confirmados], motivos, sinais, provaveis,
+        db, cidade, itens, [por_url[u] for u in confirmados], motivos, sinais, provaveis, nivel,
     )
     resposta['alvo'] = {
         'nome': nome, 'endereco': endereco,
