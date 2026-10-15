@@ -2,9 +2,11 @@ import axios from 'axios'
 import type {
   BuscaRequest,
   BuscaResponse,
+  DossieEmpreendimento,
   EvolucaoBairrosResponse,
   EvolucaoResponse,
   HistoricoResponse,
+  ProcurarEmpreendimentoRequest,
   ProgressoBusca,
   ReferencialMRVInput,
   ReferencialMRVResponse,
@@ -184,6 +186,31 @@ export async function consultarReferencialMRV(
 ): Promise<ReferencialMRVResponse> {
   const { data } = await api.get<ReferencialMRVResponse>('/api/mrv/referencial', {
     params: { cidade, quartos },
+  })
+  return data
+}
+
+/** Dossiê de um empreendimento agrupado numa busca: todo o histórico dele. */
+export async function buscarDossie(cidade: string, grupoId: string): Promise<DossieEmpreendimento> {
+  const { data } = await api.get<DossieEmpreendimento>(`/api/empreendimentos/${encodeURIComponent(grupoId)}`, {
+    params: { cidade },
+  })
+  return data
+}
+
+/**
+ * Procura um empreendimento por nome e/ou endereço no histórico. Com
+ * `coletar`, o backend antes roda uma busca normal no bairro dele — pode levar
+ * o mesmo tempo de uma busca do formulário.
+ */
+export async function procurarEmpreendimento(
+  params: ProcurarEmpreendimentoRequest,
+  signal?: AbortSignal,
+): Promise<DossieEmpreendimento> {
+  // Com coleta, é uma busca inteira nos portais antes: mais que os 90 s padrão.
+  const { data } = await api.post<DossieEmpreendimento>('/api/empreendimentos/buscar', params, {
+    signal,
+    timeout: params.coletar ? 240_000 : 90_000,
   })
   return data
 }

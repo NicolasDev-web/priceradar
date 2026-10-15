@@ -13,6 +13,11 @@ export interface Empreendimento {
   cidade: string
   bairro: string | null
   endereco: string | null
+  cep?: string | null
+  /** true = lançamento declarado; false = pronto declarado; null = o anúncio não diz. */
+  eh_lancamento?: boolean | null
+  /** Empreendimento (prédio) ao qual o anúncio pertence; null = sem outro anúncio ligado. */
+  grupo_id?: string | null
   tipo_edificacao: string | null
   latitude: number | null
   longitude: number | null
@@ -95,6 +100,100 @@ export interface BuscaResponse {
   por_bairro?: ResumoBairro[]
   sem_localizacao?: number
   comparacao?: ComparacaoBusca | null
+  /** Empreendimentos com 2+ anúncios nesta busca, do maior para o menor. */
+  grupos?: GrupoEmpreendimento[]
+  /** Mediana em que cada prédio conta uma vez. */
+  preco_m2_mediana_por_empreendimento?: number | null
+}
+
+/** Regra que uniu os anúncios do grupo. */
+export type SinalGrupo = 'endereco' | 'coordenada' | 'nome'
+
+export interface GrupoEmpreendimento {
+  grupo_id: string
+  chave: string
+  nome: string | null
+  endereco: string | null
+  bairro: string | null
+  cidade: string
+  construtora: string | null
+  latitude: number | null
+  longitude: number | null
+  n_anuncios: number
+  /** Unidades distintas: a mesma unidade anunciada duas vezes conta uma. */
+  n_unidades: number
+  preco_m2_mediana: number
+  preco_m2_medio: number
+  preco_m2_min: number
+  preco_m2_max: number
+  area_min: number | null
+  area_max: number | null
+  preco_min: number | null
+  preco_max: number | null
+  quartos: number[]
+  portais: string[]
+  eh_lancamento: boolean | null
+  /** alta: endereço ou coordenada; media: só o nome. */
+  confianca: 'alta' | 'media'
+  sinais: SinalGrupo[]
+  foto: string | null
+}
+
+/** Por que um anúncio entrou no dossiê. */
+export type MotivoAnuncio = 'endereco' | 'coordenada' | 'mesmo_predio' | 'nome' | 'texto' | 'rua'
+
+export interface AnuncioDossie {
+  url_anuncio: string
+  portal: string
+  nome_anuncio: string | null
+  nome_empreendimento: string | null
+  preco: number
+  area_m2: number
+  preco_m2: number
+  quartos: number | null
+  banheiros: number | null
+  vagas: number | null
+  bairro: string | null
+  endereco: string | null
+  foto: string | null
+  primeira_vez: string | null
+  ultima_vez: string | null
+  /** Visto na coleta mais recente da cidade (janela de 14 dias). */
+  ativo: boolean
+  variacao_vs_grupo_pct: number | null
+  motivo: MotivoAnuncio | null
+}
+
+export interface DossieEmpreendimento {
+  grupo: GrupoEmpreendimento | null
+  anuncios: AnuncioDossie[]
+  ativos: number
+  provaveis: AnuncioDossie[]
+  serie: PontoEvolucaoBairro[]
+  min_amostra: number
+  aviso: string | null
+  /** Só na busca por nome/endereço. */
+  alvo?: {
+    nome: string | null
+    endereco: string | null
+    latitude: number | null
+    longitude: number | null
+    endereco_encontrado: string | null
+    geocodificacao_precisa: boolean
+  }
+  sugestoes?: GrupoEmpreendimento[]
+  total_historico?: number
+  /** Coleta direcionada: feita, pulada por falta de bairro, ou não pedida. */
+  coleta?: 'feita' | 'sem_bairro' | null
+}
+
+export interface ProcurarEmpreendimentoRequest {
+  cidade: string
+  nome?: string | null
+  endereco?: string | null
+  bairro?: string | null
+  raio_m?: number
+  coletar?: boolean
 }
 
 export interface BuscaSalva {
@@ -103,6 +202,10 @@ export interface BuscaSalva {
   preco_min: number
   preco_max: number
   quartos: number | null
+  /** Filtros que mudam o resultado — sem eles, reabrir fazia outra busca. */
+  bairros?: string[] | null
+  banheiros?: number | null
+  tipo_edificacao?: string | null
   total_encontrado: number
   preco_m2_medio: number
   criado_em: string

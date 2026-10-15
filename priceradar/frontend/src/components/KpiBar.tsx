@@ -81,6 +81,18 @@ export function KpiBar({ dados, onEditarMRV }: Props) {
           <Minus size={10} className="text-mrv-text-dim" />
           média {formatarMoeda(dados.preco_m2_medio)}
         </p>
+        {/* Cada prédio pesa uma vez: um condomínio com 20 anúncios não
+            decide sozinho o número da praça. Só aparece quando difere. */}
+        {dados.preco_m2_mediana_por_empreendimento != null &&
+          Math.round(dados.preco_m2_mediana_por_empreendimento) !== Math.round(precoReferencia) && (
+          <p
+            className="text-[10px] text-mrv-text-muted mt-0.5 flex items-center gap-1"
+            title="Mediana em que cada prédio conta uma vez (pela mediana dele), e cada anúncio sem prédio identificado conta uma vez"
+          >
+            <Minus size={10} className="text-mrv-text-dim" />
+            por prédio {formatarMoeda(dados.preco_m2_mediana_por_empreendimento)}
+          </p>
+        )}
       </div>
 
       {/* Menor preço/m² */}

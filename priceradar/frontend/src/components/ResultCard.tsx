@@ -1,6 +1,7 @@
-import { Bath, BedDouble, Car, ExternalLink, MapPin } from 'lucide-react'
-import type { Empreendimento } from '../types'
+import { Bath, BedDouble, Building2, Car, ExternalLink, MapPin } from 'lucide-react'
+import type { Empreendimento, GrupoEmpreendimento } from '../types'
 import { desvioPercentual, faixaPorDesvio, rotuloDesvio } from '../utils/posicionamento'
+import { SeloLancamento } from './EmpreendimentoCard'
 import { FotoCarrossel } from './FotoCarrossel'
 import { VariacaoMRVBadge } from './VariacaoMRVBadge'
 
@@ -9,6 +10,9 @@ interface Props {
   precoM2Medio: number
   /** Posição no grid — usada só para escalonar a entrada (stagger). */
   indice?: number
+  /** Empreendimento do anúncio, quando ele foi agrupado com outros. */
+  grupo?: GrupoEmpreendimento
+  onAbrirGrupo?: (grupo: GrupoEmpreendimento) => void
 }
 
 // Acima disso, todo card entra junto — sem isso, um resultado grande (30+)
@@ -121,7 +125,7 @@ function RfScoreIndicator({ score }: { score: number }) {
   )
 }
 
-export function ResultCard({ empreendimento: e, precoM2Medio, indice = 0 }: Props) {
+export function ResultCard({ empreendimento: e, precoM2Medio, indice = 0, grupo, onAbrirGrupo }: Props) {
   const pos = calcularPosicionamento(e.preco_m2, precoM2Medio)
   const portalCfg = PORTAL_MAP[e.portal] ?? { label: e.portal, color: 'bg-mrv-surface-2 text-mrv-text-muted' }
   const atrasoStagger = Math.min(indice, STAGGER_MAX_INDICE) * STAGGER_STEP_MS
@@ -173,6 +177,7 @@ export function ResultCard({ empreendimento: e, precoM2Medio, indice = 0 }: Prop
               {portalCfg.label}
             </span>
             <SeloMudanca empreendimento={e} />
+            <SeloLancamento valor={e.eh_lancamento} />
             {e.construtora && (
               <span className="text-[10px] font-medium text-mrv-text-muted bg-mrv-surface-2/60 px-2 py-0.5 rounded-full">
                 {e.construtora}
@@ -194,6 +199,32 @@ export function ResultCard({ empreendimento: e, precoM2Medio, indice = 0 }: Prop
             )}
             <span className="text-[10px] text-mrv-text-dim ml-auto flex-shrink-0">{e.area_m2} m²</span>
           </div>
+
+          {/* Mesmo prédio: compara o anúncio com a mediana do próprio prédio,
+              que diz mais que a média da cidade ("está barato para ESTE prédio"). */}
+          {grupo && (
+            <button
+              type="button"
+              onClick={() => onAbrirGrupo?.(grupo)}
+              className="-mt-1 mb-3 w-full flex items-center gap-1.5 text-left text-[10px] text-mrv-text-muted bg-mrv-surface-2/50 border border-mrv-border rounded-card px-2 py-1.5 hover:border-mrv-green hover:text-mrv-text transition-colors"
+              title="Abrir o dossiê do prédio"
+            >
+              <Building2 size={11} className="text-mrv-text-dim flex-shrink-0" />
+              <span className="truncate">
+                Mesmo prédio: <strong className="text-mrv-text">{grupo.n_anuncios} anúncios</strong>
+                {' · mediana '}{formatarMoeda(grupo.preco_m2_mediana)}/m²
+              </span>
+              {grupo.preco_m2_mediana > 0 && (() => {
+                const vs = ((e.preco_m2 - grupo.preco_m2_mediana) / grupo.preco_m2_mediana) * 100
+                if (Math.abs(vs) < 0.5) return null
+                return (
+                  <span className={`ml-auto font-semibold whitespace-nowrap ${vs < 0 ? 'text-mrv-price-low' : 'text-mrv-price-high'}`}>
+                    {vs > 0 ? '+' : ''}{vs.toFixed(0)}% vs prédio
+                  </span>
+                )
+              })()}
+            </button>
+          )}
 
           {/* Logradouro em linha própria: é dado de rua, não de bairro, e
               misturar os dois foi o que quebrou o filtro por bairro. */}

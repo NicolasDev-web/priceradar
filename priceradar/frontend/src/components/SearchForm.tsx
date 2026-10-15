@@ -2,10 +2,12 @@ import { Building2, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { listarBairros } from '../api/client'
 import { CIDADES } from '../data/cidades'
-import type { BuscaRequest } from '../types'
+import type { BuscaRequest, ProcurarEmpreendimentoRequest } from '../types'
 
 interface Props {
   onBuscar: (params: BuscaRequest) => void
+  /** Procura de um empreendimento específico por nome e/ou endereço. */
+  onProcurarEmpreendimento?: (params: ProcurarEmpreendimentoRequest) => void
   loading: boolean
 }
 
@@ -32,8 +34,10 @@ const inputBase =
 const labelBase =
   'block text-[10px] font-semibold text-mrv-text-dim mb-1.5 uppercase tracking-[0.1em]'
 
-export function SearchForm({ onBuscar, loading }: Props) {
+export function SearchForm({ onBuscar, onProcurarEmpreendimento, loading }: Props) {
   const [cidade, setCidade] = useState('Fortaleza, CE')
+  const [nomeEmp, setNomeEmp] = useState('')
+  const [enderecoEmp, setEnderecoEmp] = useState('')
   const [bairros, setBairros] = useState<string[]>([])
   const [bairroDigitando, setBairroDigitando] = useState('')
   const [precoMin, setPrecoMin] = useState('280.000')
@@ -135,6 +139,28 @@ export function SearchForm({ onBuscar, loading }: Props) {
       bairros: todos.length ? todos : null,
       tipo_edificacao: tipoEdificacao || null,
     })
+  }
+
+  const podeProcurar = Boolean(nomeEmp.trim() || enderecoEmp.trim())
+
+  function procurar() {
+    if (!podeProcurar || !onProcurarEmpreendimento) return
+    onProcurarEmpreendimento({
+      cidade,
+      nome: nomeEmp.trim() || null,
+      endereco: enderecoEmp.trim() || null,
+      // O primeiro bairro escolhido ajuda a desempatar nome repetido na cidade.
+      bairro: bairros[0] ?? (bairroDigitando.trim() || null),
+    })
+  }
+
+  // Enter nestes campos procura o empreendimento — não dispara a busca de
+  // concorrentes do formulário principal.
+  function handleProcuraKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      procurar()
+    }
   }
 
   return (
@@ -341,6 +367,56 @@ export function SearchForm({ onBuscar, loading }: Props) {
           {loading ? 'Buscando...' : 'Buscar concorrentes'}
         </button>
       </div>
+
+      {onProcurarEmpreendimento && (
+        <div className="mt-5 pt-4 border-t border-mrv-border/60">
+          <p className={labelBase}>
+            Procurar empreendimento{' '}
+            <span className="normal-case font-normal">
+              — junta os anúncios do mesmo prédio já coletados na cidade e calcula o preço dele
+            </span>
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            <div className="md:col-span-4">
+              <label htmlFor="emp-nome" className="sr-only">Nome do empreendimento</label>
+              <input
+                id="emp-nome"
+                type="text"
+                value={nomeEmp}
+                onChange={e => setNomeEmp(e.target.value)}
+                onKeyDown={handleProcuraKeyDown}
+                placeholder="Nome — ex.: Reserva Arvoredo"
+                autoComplete="off"
+                className={inputBase}
+              />
+            </div>
+            <div className="md:col-span-5">
+              <label htmlFor="emp-endereco" className="sr-only">Endereço do empreendimento</label>
+              <input
+                id="emp-endereco"
+                type="text"
+                value={enderecoEmp}
+                onChange={e => setEnderecoEmp(e.target.value)}
+                onKeyDown={handleProcuraKeyDown}
+                placeholder="Endereço com número — ex.: Rua das Flores, 120"
+                autoComplete="off"
+                className={inputBase}
+              />
+            </div>
+            <div className="md:col-span-3">
+              <button
+                type="button"
+                onClick={procurar}
+                disabled={!podeProcurar}
+                className="w-full flex items-center justify-center gap-2 border border-mrv-green/60 text-mrv-text hover:bg-mrv-green disabled:opacity-40 disabled:hover:bg-transparent font-semibold text-sm px-4 py-2.5 rounded-card transition-colors"
+              >
+                <Building2 size={15} />
+                Procurar empreendimento
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   )
 }

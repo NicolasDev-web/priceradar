@@ -3,6 +3,8 @@ import { AlertTriangle, Clock, Download, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buscarConcorrentes, exportarExcel } from './api/client'
 import { ComparativoBairros } from './components/ComparativoBairros'
+import { EmpreendimentoCard } from './components/EmpreendimentoCard'
+import { EmpreendimentoPanel, type PedidoDossie } from './components/EmpreendimentoPanel'
 import { EvolucaoBairrosChart } from './components/EvolucaoBairrosChart'
 import { EvolucaoChart } from './components/EvolucaoChart'
 import { FunilColeta } from './components/FunilColeta'
@@ -17,7 +19,7 @@ import { ResultCard } from './components/ResultCard'
 import { ResumoMudancas } from './components/ResumoMudancas'
 import { SearchForm } from './components/SearchForm'
 import { LABEL_PORTAL, PORTAL_CONFIG } from './data/portais'
-import type { BuscaRequest, BuscaResponse, BuscaSalva } from './types'
+import type { BuscaRequest, BuscaResponse, BuscaSalva, GrupoEmpreendimento, ProcurarEmpreendimentoRequest } from './types'
 import { ordenar, type CriterioOrdem, type Direcao } from './utils/ordenacao'
 
 // Abaixo disso a mediana oscila demais com um anúncio a mais ou a menos.
@@ -51,6 +53,28 @@ export default function App() {
     () => (resultado ? ordenar(resultado.empreendimentos, criterio, direcao) : []),
     [resultado, criterio, direcao],
   )
+  // Cards por anúncio ou por empreendimento (prédio). Lembrada como a ordem.
+  const [vista, setVista] = useState<'anuncios' | 'empreendimentos'>(() => {
+    try { return localStorage.getItem('priceradar_vista') === 'empreendimentos' ? 'empreendimentos' : 'anuncios' } catch { return 'anuncios' }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('priceradar_vista', vista) } catch { /* só não lembra */ }
+  }, [vista])
+  const gruposPorId = useMemo(
+    () => new Map((resultado?.grupos ?? []).map(g => [g.grupo_id, g])),
+    [resultado],
+  )
+  const gruposOrdenados = useMemo(() => {
+    const gs = [...(resultado?.grupos ?? [])]
+    gs.sort((a, b) => (direcao === 'asc' ? 1 : -1) * (a.preco_m2_mediana - b.preco_m2_mediana))
+    return gs
+  }, [resultado, direcao])
+  // Dossiê do empreendimento: aberto por um card/selo (grupo) ou pela procura
+  // por nome/endereço. A cidade vai junto porque a procura pode vir antes de
+  // qualquer busca.
+  const [pedidoDossie, setPedidoDossie] = useState<PedidoDossie | null>(null)
+  const [cidadeDossie, setCidadeDossie] = useState<string | null>(null)
+  const [mostrarDossie, setMostrarDossie] = useState(false)
   const [mostrarHistorico, setMostrarHistorico] = useState(false)
   const [mostrarFormMRV, setMostrarFormMRV] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
@@ -124,12 +148,31 @@ export default function App() {
 
   function handleReabrirHistorico(busca: BuscaSalva) {
     setMostrarHistorico(false)
+    // Todos os filtros que mudam o resultado: sem bairros/banheiros/tipo, a
+    // busca reaberta era outra busca e nunca casava com o cache.
     handleBuscar({
       cidade: busca.cidade,
       preco_min: busca.preco_min,
       preco_max: busca.preco_max,
       quartos: busca.quartos,
+      bairros: busca.bairros ?? null,
+      banheiros: busca.banheiros ?? null,
+      tipo_edificacao: busca.tipo_edificacao ?? null,
     })
+  }
+
+  function abrirGrupo(grupo: GrupoEmpreendimento, cidade?: string) {
+    const alvo = cidade ?? ultimaBusca?.cidade ?? cidadeDossie
+    if (!alvo) return
+    setCidadeDossie(alvo)
+    setPedidoDossie({ tipo: 'grupo', grupoId: grupo.grupo_id, titulo: grupo.nome ?? grupo.endereco ?? undefined })
+    setMostrarDossie(true)
+  }
+
+  function handleProcurarEmpreendimento(params: ProcurarEmpreendimentoRequest) {
+    setCidadeDossie(params.cidade)
+    setPedidoDossie({ tipo: 'procura', params })
+    setMostrarDossie(true)
   }
 
   async function handleMRVSalvo() {
@@ -194,7 +237,7 @@ export default function App() {
       {/* Main */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 md:px-6 py-6">
 
-        <SearchForm onBuscar={handleBuscar} loading={loading} />
+        <SearchForm onBuscar={handleBuscar} onProcurarEmpreendimento={handleProcurarEmpreendimento} loading={loading} />
 
         {erro && (
           <div className="bg-red-950/60 border border-red-800/50 text-red-300 rounded-card px-5 py-4 text-sm whitespace-pre-line mb-6 motion-safe:animate-fade-up">
@@ -351,9 +394,29 @@ export default function App() {
 
                 {/* Cabeçalho da lista de resultados com badges de portais */}
                 <div className="mb-3 mt-6 flex items-center justify-between gap-3 flex-wrap">
-                  <h2 className="text-[11px] font-bold text-mrv-text-dim uppercase tracking-[0.1em]">
-                    {resultado.total} empreendimento{resultado.total !== 1 ? 's' : ''} encontrado{resultado.total !== 1 ? 's' : ''}
-                  </h2>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {/* Anúncio ≠ empreendimento: um prédio pode ter vários anúncios. */}
+                    <h2 className="text-[11px] font-bold text-mrv-text-dim uppercase tracking-[0.1em]">
+                      {resultado.total} anúncio{resultado.total !== 1 ? 's' : ''}
+                      {' · '}{(resultado.grupos ?? []).length} prédio{(resultado.grupos ?? []).length !== 1 ? 's' : ''} com 2+ anúncios
+                    </h2>
+                    <div role="tablist" aria-label="Ver por" className="flex border border-mrv-border rounded-card overflow-hidden text-[11px]">
+                      {(['anuncios', 'empreendimentos'] as const).map(v => (
+                        <button
+                          key={v}
+                          type="button"
+                          role="tab"
+                          aria-selected={vista === v}
+                          onClick={() => setVista(v)}
+                          className={`px-2.5 py-1 font-semibold transition-colors ${vista === v
+                            ? 'bg-mrv-green text-white'
+                            : 'text-mrv-text-muted hover:text-mrv-text'}`}
+                        >
+                          {v === 'anuncios' ? 'Anúncios' : 'Empreendimentos'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <OrdenacaoControle
                     criterio={criterio}
                     direcao={direcao}
@@ -376,16 +439,45 @@ export default function App() {
                   </div>
                 </div>
 
-                <div key={buscaVersion} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
-                  {cardsOrdenados.map((emp, i) => (
-                    <ResultCard
-                      key={emp.id}
-                      empreendimento={emp}
-                      precoM2Medio={resultado.preco_m2_medio}
-                      indice={i}
-                    />
-                  ))}
-                </div>
+                {vista === 'empreendimentos' ? (
+                  <>
+                    <p className="text-[11px] text-mrv-text-dim mt-1 mb-2">
+                      Anúncios do mesmo prédio juntos — pelo endereço, pela localização no mapa ou pelo nome.
+                      Os {resultado.total - (resultado.grupos ?? []).reduce((n, g) => n + g.n_anuncios, 0)} anúncios
+                      sem outro do mesmo prédio aparecem só em “Anúncios”.
+                    </p>
+                    {gruposOrdenados.length === 0 ? (
+                      <p className="text-sm text-mrv-text-muted bg-mrv-surface border border-mrv-border rounded-card px-4 py-6 text-center">
+                        Nenhum prédio com mais de um anúncio nesta busca. Use “Procurar empreendimento” para buscar no histórico.
+                      </p>
+                    ) : (
+                      <div key={`g${buscaVersion}`} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {gruposOrdenados.map((g, i) => (
+                          <EmpreendimentoCard
+                            key={g.grupo_id}
+                            grupo={g}
+                            precoM2Medio={resultado.preco_m2_medio}
+                            onAbrir={grupo => abrirGrupo(grupo)}
+                            indice={i}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div key={buscaVersion} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
+                    {cardsOrdenados.map((emp, i) => (
+                      <ResultCard
+                        key={emp.id}
+                        empreendimento={emp}
+                        precoM2Medio={resultado.preco_m2_medio}
+                        indice={i}
+                        grupo={emp.grupo_id ? gruposPorId.get(emp.grupo_id) : undefined}
+                        onAbrirGrupo={grupo => abrirGrupo(grupo)}
+                      />
+                    ))}
+                  </div>
+                )}
               </>
             )}
           </>
@@ -445,6 +537,17 @@ export default function App() {
           cidade={ultimaBusca.cidade}
           onReabrir={handleReabrirHistorico}
           onFechar={() => setMostrarHistorico(false)}
+        />
+      )}
+
+      {cidadeDossie && (
+        <EmpreendimentoPanel
+          isOpen={mostrarDossie}
+          cidade={cidadeDossie}
+          pedido={pedidoDossie}
+          precoM2Referencia={resultado && ultimaBusca?.cidade === cidadeDossie ? resultado.preco_m2_mediana : null}
+          onAbrirGrupo={grupo => abrirGrupo(grupo, cidadeDossie)}
+          onFechar={() => setMostrarDossie(false)}
         />
       )}
 
