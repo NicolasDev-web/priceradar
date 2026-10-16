@@ -83,6 +83,11 @@ function LinhaAnuncio({ a }: { a: AnuncioDossie }) {
           {a.bairro && ` · ${a.bairro}`}
           {' · visto em '}{dataCurta(a.primeira_vez)}
         </p>
+        {a.evidencias?.length > 0 && (
+          <ul className="mt-1 text-[10px] text-mrv-text-muted space-y-0.5">
+            {a.evidencias.map(e => <li key={e}>• {e}</li>)}
+          </ul>
+        )}
       </div>
       <div className="text-right flex-shrink-0">
         <p className="font-data font-bold text-mrv-text text-sm">{formatarMoeda(a.preco_m2)}</p>
@@ -208,6 +213,8 @@ export function EmpreendimentoPanel({ isOpen, cidade, pedido, precoM2Referencia,
   const vsPraca = g && precoM2Referencia
     ? ((g.preco_m2_mediana - precoM2Referencia) / precoM2Referencia) * 100
     : null
+  const diretos = dados?.anuncios.filter(a => a.classe_vinculo === 'direto') ?? []
+  const corroborados = dados?.anuncios.filter(a => a.classe_vinculo === 'corroborado') ?? []
 
   return (
     <div
@@ -262,6 +269,29 @@ export function EmpreendimentoPanel({ isOpen, cidade, pedido, precoM2Referencia,
               </p>
             )}
 
+            {dados.alvo?.conflito_referencia_oficial && (
+              <div className="flex items-start gap-2 bg-amber-950/40 border border-amber-800/40 rounded-card px-3 py-2.5">
+                <AlertTriangle size={13} className="text-amber-400 flex-shrink-0 mt-0.5" />
+                <p className="text-[11px] text-amber-200/90">
+                  Conflito com a referência oficial: {dados.alvo.conflito_referencia_oficial}. O endereço informado foi preservado e a referência não promoveu anúncios.
+                </p>
+              </div>
+            )}
+
+            {dados.referencia_oficial && (
+              <div className="bg-mrv-surface-2/40 border border-mrv-border rounded-card px-3 py-2.5 text-[11px]">
+                <p className="text-[10px] font-bold text-mrv-text-dim uppercase tracking-[0.1em] mb-1">Referência oficial · {dados.referencia_oficial.fonte}</p>
+                <p className="font-semibold text-mrv-text">{dados.referencia_oficial.nome}</p>
+                {(dados.referencia_oficial.endereco || dados.referencia_oficial.bairro) && (
+                  <p className="text-mrv-text-muted mt-0.5">{[dados.referencia_oficial.endereco, dados.referencia_oficial.bairro].filter(Boolean).join(' · ')}</p>
+                )}
+                <a href={dados.referencia_oficial.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-mrv-text-muted hover:text-mrv-text mt-1">
+                  fonte de identidade <ExternalLink size={9} />
+                </a>
+                <p className="text-[10px] text-mrv-text-dim mt-1">Não participa do cálculo de preço.</p>
+              </div>
+            )}
+
             {dados.aviso && (
               <div className="flex items-start gap-2 bg-amber-950/40 border border-amber-800/40 rounded-card px-3 py-2.5">
                 <AlertTriangle size={13} className="text-amber-400 flex-shrink-0 mt-0.5" />
@@ -303,6 +333,11 @@ export function EmpreendimentoPanel({ isOpen, cidade, pedido, precoM2Referencia,
                     detalhe={g.quartos.length ? `${g.quartos.join('/')} quartos` : null}
                   />
                 </div>
+                {dados.resumo_vinculos && (
+                  <p className="text-[11px] text-mrv-text-muted">
+                    A mediana usa {dados.resumo_vinculos.participam_mediana} anúncios: {dados.resumo_vinculos.direto} diretos e {dados.resumo_vinculos.corroborado} corroborados. Possíveis correspondências ficam fora.
+                  </p>
+                )}
                 {g.n_anuncios < 3 && (
                   <p className="text-[11px] text-amber-300/90">
                     Só {g.n_anuncios} anúncio{g.n_anuncios === 1 ? '' : 's'}: use como indicativo, não como preço do prédio.
@@ -316,10 +351,19 @@ export function EmpreendimentoPanel({ isOpen, cidade, pedido, precoM2Referencia,
 
                 <section>
                   <h3 className="text-[10px] font-bold text-mrv-text-dim uppercase tracking-[0.1em] mb-1">
-                    Anúncios deste empreendimento
+                    Correspondência direta ({diretos.length})
                   </h3>
-                  <ul>{dados.anuncios.map(a => <LinhaAnuncio key={a.url_anuncio} a={a} />)}</ul>
+                  <ul>{diretos.map(a => <LinhaAnuncio key={a.url_anuncio} a={a} />)}</ul>
                 </section>
+                {corroborados.length > 0 && (
+                  <section>
+                    <h3 className="text-[10px] font-bold text-mrv-text-dim uppercase tracking-[0.1em] mb-1">
+                      Correspondência corroborada ({corroborados.length})
+                    </h3>
+                    <p className="text-[10px] text-mrv-text-dim mb-1">Evidências complementares convergem para o mesmo empreendimento; estes anúncios participam da mediana.</p>
+                    <ul>{corroborados.map(a => <LinhaAnuncio key={a.url_anuncio} a={a} />)}</ul>
+                  </section>
+                )}
               </>
             ) : (
               <div className="text-sm text-mrv-text-muted space-y-2">
@@ -371,12 +415,12 @@ export function EmpreendimentoPanel({ isOpen, cidade, pedido, precoM2Referencia,
                   aria-expanded={verProvaveis}
                 >
                   <ChevronDown size={12} className={`transition-transform ${verProvaveis ? '' : '-rotate-90'}`} />
-                  {g?.nivel === 'mesmo_predio' ? 'Prováveis deste prédio' : 'Talvez sejam deste empreendimento'} ({dados.provaveis.length})
+                  Possível correspondência ({dados.provaveis.length})
                 </button>
                 {verProvaveis && (
                   <>
                     <p className="text-[10px] text-mrv-text-dim mt-1">
-                      Fora do preço: anúncios sem número no ponto do prédio, ou ligados só pela rua ou por uma menção ao nome.
+                      Fora do preço: anúncios sustentados por um único sinal ou com conflito explícito de identidade/localização.
                     </p>
                     <ul>{dados.provaveis.map(a => <LinhaAnuncio key={a.url_anuncio} a={a} />)}</ul>
                   </>

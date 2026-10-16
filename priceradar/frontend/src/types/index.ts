@@ -176,6 +176,35 @@ export interface AnuncioDossie {
   ativo: boolean
   variacao_vs_grupo_pct: number | null
   motivo: MotivoAnuncio | null
+  classe_vinculo: 'direto' | 'corroborado' | 'provavel'
+  evidencias: string[]
+  fontes_identidade: string[]
+}
+
+export interface ReferenciaOficial {
+  nome: string
+  aliases: string[]
+  construtora: string
+  endereco: string | null
+  bairro: string | null
+  cidade: string
+  fonte: string
+  url: string
+}
+
+export interface ResumoVinculos {
+  direto: number
+  corroborado: number
+  provavel: number
+  participam_mediana: number
+}
+
+export interface DiagnosticoEspecifico {
+  candidatos_avaliados: number
+  candidatos_detalhe: number
+  detalhes_lidos: number
+  acertos_cache: number
+  falhas_por_fonte: Record<string, string>
 }
 
 export interface DossieEmpreendimento {
@@ -194,11 +223,15 @@ export interface DossieEmpreendimento {
     longitude: number | null
     endereco_encontrado: string | null
     geocodificacao_precisa: boolean
+    conflito_referencia_oficial?: string | null
   }
   sugestoes?: GrupoEmpreendimento[]
   total_historico?: number
   /** Coleta direcionada: feita, pulada por falta de bairro, ou não pedida. */
   coleta?: 'feita' | 'sem_bairro' | null
+  referencia_oficial?: ReferenciaOficial | null
+  resumo_vinculos?: ResumoVinculos
+  diagnostico_especifico?: DiagnosticoEspecifico
 }
 
 export interface ProcurarEmpreendimentoRequest {
@@ -208,6 +241,7 @@ export interface ProcurarEmpreendimentoRequest {
   bairro?: string | null
   raio_m?: number
   coletar?: boolean
+  aprofundar?: boolean
 }
 
 export interface BuscaSalva {

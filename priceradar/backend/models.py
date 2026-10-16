@@ -268,6 +268,9 @@ class ProcurarEmpreendimentoRequest(BaseModel):
     # empreendimento (mesmo volume de requisições de uma busca do formulário,
     # passando pelo cache). False: só o histórico — resposta instantânea.
     coletar: bool = False
+    # Lê seletivamente detalhes e catálogos oficiais. Pode ser desligado para
+    # uma resposta instantânea e mantém compatibilidade com clientes antigos.
+    aprofundar: bool = True
     preco_min: float = 100_000
     preco_max: float = 3_000_000
 

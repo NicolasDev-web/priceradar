@@ -79,7 +79,8 @@ def _foto(item: dict) -> str | None:
     return fotos[0] if isinstance(fotos, list) and fotos else None
 
 
-def _anuncio_saida(item: dict, mediana: float | None, ultimas: dict, motivo: str | None = None) -> dict:
+def _anuncio_saida(item: dict, mediana: float | None, ultimas: dict, motivo: str | None = None,
+                   classe: str | None = None, evidencias: list[str] | None = None) -> dict:
     ultima_coleta = ultimas.get(_chave_cobertura(item))
     return {
         'url_anuncio': item['url_anuncio'],
@@ -102,6 +103,9 @@ def _anuncio_saida(item: dict, mediana: float | None, ultimas: dict, motivo: str
             round((item['preco_m2'] - mediana) / mediana * 100, 1) if mediana and item.get('preco_m2') else None
         ),
         'motivo': motivo,
+        'classe_vinculo': classe or ('provavel' if motivo in {'texto', 'rua', 'anexo'} else 'direto'),
+        'evidencias': evidencias or ([] if motivo is None else [motivo]),
+        'fontes_identidade': sorted(set(item.get('fontes_identidade') or [f"listagem:{item.get('portal') or 'desconhecido'}"])),
     }
 
 
@@ -155,12 +159,15 @@ def _nivel_mais_fraco(motivos: list[str], padrao: str) -> str:
 
 async def _montar_resposta(db, cidade: str, itens_hist: list[dict], escolhidos: list[dict],
                            motivos: dict[str, str], sinais: set[str], provaveis: list[dict] | None = None,
-                           nivel: str | None = None) -> dict:
+                           nivel: str | None = None, classes: dict[str, str] | None = None,
+                           evidencias: dict[str, list[str]] | None = None) -> dict:
     ultima = _ultimas_coletas(itens_hist)
     resumo = resumir_grupo(escolhidos, sinais, nivel, provaveis) if escolhidos else None
     mediana = resumo['preco_m2_mediana'] if resumo else None
     anuncios = sorted(
-        (_anuncio_saida(i, mediana, ultima, motivos.get(i['url_anuncio'])) for i in escolhidos),
+        (_anuncio_saida(i, mediana, ultima, motivos.get(i['url_anuncio']),
+                        (classes or {}).get(i['url_anuncio']), (evidencias or {}).get(i['url_anuncio']))
+         for i in escolhidos),
         key=lambda a: (not a['ativo'], a['preco_m2'] or 0),
     )
     urls = {chave_url(i['url_anuncio']) or i['url_anuncio'] for i in escolhidos}
@@ -170,7 +177,9 @@ async def _montar_resposta(db, cidade: str, itens_hist: list[dict], escolhidos: 
         'anuncios': anuncios,
         'ativos': sum(1 for a in anuncios if a['ativo']),
         'provaveis': [
-            _anuncio_saida(i, mediana, ultima, motivos.get(i['url_anuncio']))
+            _anuncio_saida(i, mediana, ultima, motivos.get(i['url_anuncio']),
+                            (classes or {}).get(i['url_anuncio'], 'provavel'),
+                            (evidencias or {}).get(i['url_anuncio']))
             for i in (provaveis or [])
         ],
         'serie': await _serie(db, cidade, urls) if urls else [],
@@ -238,6 +247,108 @@ def _frase(texto: str | None) -> str | None:
     return frase if len(frase) >= 4 else None
 
 
+def _compativel_bairro(valor: str | None, alvos: set[str]) -> bool | None:
+    if not valor or not alvos:
+        return None
+    atual = normalizar(valor)
+    return any(atual in alvo or alvo in atual for alvo in alvos)
+
+
+def avaliar_evidencias(item: dict, alvo: dict, referencia: dict | None = None) -> dict:
+    """Registra todos os sinais e conflitos de uma linha, sem decidir isoladamente.
+
+    A promoção para ``corroborado`` acontece depois, quando se conhece a
+    convergência entre anúncios. Aqui só ``direto`` pode ser decidido.
+    """
+    rua, numero = normalizar_rua(item.get('endereco'))
+    ruas = {r for r in (alvo.get('rua'), alvo.get('rua_referencia')) if r}
+    numeros = {n for n in (alvo.get('numero'), alvo.get('numero_referencia')) if n}
+    bairros = {b for b in (alvo.get('bairro'), alvo.get('bairro_referencia')) if b}
+    nomes = [n for n in (alvo.get('nome'), *(alvo.get('aliases_normalizados') or [])) if n]
+    frases = [f for f in (alvo.get('frase'), *(alvo.get('frases_aliases') or [])) if f]
+
+    codigos: set[str] = set()
+    conflitos: list[str] = []
+    fontes = set(item.get('fontes_identidade') or [f"listagem:{item.get('portal') or 'desconhecido'}"])
+
+    rua_ok = bool(rua and rua in ruas)
+    numero_ok = bool(rua_ok and numero and numero in numeros)
+    if rua_ok:
+        codigos.add('rua')
+    if numero_ok:
+        codigos.add('numero')
+    if rua_ok and numero and numeros and numero not in numeros:
+        conflitos.append('número diferente na mesma rua')
+
+    bairro_ok = _compativel_bairro(item.get('bairro'), bairros)
+    if bairro_ok:
+        codigos.add('bairro')
+    elif bairro_ok is False:
+        conflitos.append('bairro incompatível')
+
+    geo = alvo.get('geo')
+    tem_coord = item.get('origem_coordenada') == 'exata' and item.get('latitude') is not None \
+        and item.get('longitude') is not None
+    dist = (distancia_m(geo['latitude'], geo['longitude'], float(item['latitude']),
+                        float(item['longitude'])) if geo and tem_coord else None)
+    if geo and geo.get('precisa') and dist is not None and dist <= alvo['raio_m']:
+        codigos.add('coordenada')
+        if rua and ruas and rua not in ruas:
+            conflitos.append('ponto próximo em rua diferente')
+    elif dist is not None and dist > 200:
+        conflitos.append('distância superior a 200 m')
+
+    nome_item = normalizar_nome(item.get('nome_empreendimento'))
+    nome_ok = bool(nome_item and nomes and max(similaridade_nome(nome_item, n) for n in nomes) >= .9)
+    if nome_ok:
+        codigos.add('nome_estruturado')
+    elif nome_item and nomes and len(_tokens(nome_item)) >= 2 \
+            and max(similaridade_nome(nome_item, n) for n in nomes) < .45:
+        conflitos.append('nome específico conflitante')
+
+    texto = ' '.join(_tokens(
+        f"{item.get('nome_anuncio') or ''} {item.get('descricao') or ''}"
+    ))
+    if frases and any(f" {frase} " in f" {texto} " for frase in frases):
+        codigos.add('mencao_nome')
+
+    construtora_ref = normalizar((referencia or {}).get('construtora') or '')
+    if construtora_ref and item.get('construtora') \
+            and normalizar(item['construtora']) == construtora_ref:
+        codigos.add('construtora')
+
+    bloqueado = bool(conflitos)
+    local_ok = numero_ok or 'coordenada' in codigos or rua_ok or bairro_ok is True
+    direto = not bloqueado and (
+        numero_ok
+        or ('coordenada' in codigos)
+        or (nome_ok and local_ok)
+    )
+    if referencia and codigos & {'nome_estruturado', 'mencao_nome', 'rua', 'numero', 'bairro'}:
+        fontes.add(f"oficial:{referencia.get('fonte') or 'catalogo'}")
+
+    rotulos = {
+        'nome_estruturado': 'nome estruturado compatível',
+        'mencao_nome': 'menção textual exata ao nome',
+        'rua': 'rua compatível',
+        'numero': 'número do endereço compatível',
+        'coordenada': f"coordenada precisa a {round(dist or 0)} m",
+        'bairro': 'bairro compatível',
+        'construtora': 'construtora compatível',
+    }
+    evidencias = [rotulos[c] for c in ('nome_estruturado', 'mencao_nome', 'rua', 'numero',
+                                        'coordenada', 'bairro', 'construtora') if c in codigos]
+    evidencias.extend(f"conflito: {c}" for c in conflitos)
+    legado = ('endereco' if numero_ok else 'coordenada' if 'coordenada' in codigos
+              else 'nome' if nome_ok else 'texto' if 'mencao_nome' in codigos
+              else 'rua' if rua_ok else None)
+    return {
+        'codigos': codigos, 'evidencias': evidencias, 'conflitos': conflitos,
+        'classe': 'direto' if direto else 'provavel', 'motivo': legado,
+        'fontes': sorted(fontes),
+    }
+
+
 def pontuar(item: dict, alvo: dict) -> str | None:
     """Motivo mais forte pelo qual `item` é o empreendimento procurado, ou None."""
     rua, numero = normalizar_rua(item.get('endereco'))
@@ -300,8 +411,11 @@ def mesclar_coletados(historico: list[dict], coletados: list[dict]) -> list[dict
 async def procurar_empreendimento(
     db, cidade: str, nome: str | None, endereco: str | None, raio_m: float = 60.0,
     bairro: str | None = None, coletados: list[dict] | None = None,
+    aprofundar: bool = False,
 ) -> dict:
     from repositories.empreendimento_repo import historico_da_cidade
+    from services.catalogos_oficiais import buscar_referencia_oficial
+    from services.detalhes_anuncios import enriquecer_candidatos
     from services.geocoding import geocodificar
 
     rua, numero = normalizar_rua(endereco)
@@ -320,41 +434,116 @@ async def procurar_empreendimento(
     itens = preparar_historico(await historico_da_cidade(db, cidade))
     if coletados:
         itens = mesclar_coletados(itens, coletados)
+    diagnostico = {
+        'candidatos_avaliados': len(itens), 'candidatos_detalhe': 0,
+        'detalhes_lidos': 0, 'acertos_cache': 0, 'falhas_por_fonte': {},
+    }
+    referencia = None
+    conflito_oficial = None
+    if aprofundar:
+        referencia = await buscar_referencia_oficial(db, cidade, nome, diagnostico)
+    rua_ref, numero_ref = normalizar_rua((referencia or {}).get('endereco'))
+    bairro_ref = normalizar((referencia or {}).get('bairro') or '') or None
+    if referencia:
+        if rua and rua_ref and rua != rua_ref:
+            conflito_oficial = 'o endereço informado e o catálogo oficial indicam ruas diferentes'
+        elif rua and rua_ref and rua == rua_ref and numero and numero_ref and numero != numero_ref:
+            conflito_oficial = 'o endereço informado e o catálogo oficial indicam números diferentes'
+        elif bairro and bairro_ref and not _compativel_bairro(bairro, {bairro_ref}):
+            conflito_oficial = 'o bairro informado diverge do catálogo oficial'
+    if conflito_oficial:
+        # A referência continua visível, mas não fornece nenhum sinal para a
+        # promoção. O endereço do usuário jamais é sobrescrito.
+        alvo.update(rua_referencia=None, numero_referencia=None, bairro_referencia=None,
+                    aliases_normalizados=[], frases_aliases=[])
+    else:
+        aliases = [(referencia or {}).get('nome'), *((referencia or {}).get('aliases') or [])]
+        alvo.update(
+            rua_referencia=rua_ref, numero_referencia=numero_ref,
+            bairro_referencia=bairro_ref,
+            aliases_normalizados=[normalizar_nome(n) for n in aliases if n],
+            frases_aliases=[f for f in (_frase(n) for n in aliases if n) if f],
+        )
+
+    if aprofundar and itens:
+        avaliacoes_pre = {i['url_anuncio']: avaliar_evidencias(i, alvo, referencia if not conflito_oficial else None)
+                          for i in itens}
+        candidatos = [i for i in itens if avaliacoes_pre[i['url_anuncio']]['codigos']]
+        if alvo.get('bairro') or alvo.get('bairro_referencia'):
+            bairros_alvo = {b for b in (alvo.get('bairro'), alvo.get('bairro_referencia')) if b}
+            candidatos.extend(i for i in itens if i not in candidatos and _compativel_bairro(i.get('bairro'), bairros_alvo))
+        await enriquecer_candidatos(db, candidatos or itens, diagnostico)
+
     membros, anexos, resumos = _membros_por_grupo(itens)
-
-    por_url_0 = {i['url_anuncio']: i for i in itens}
-    motivos: dict[str, str] = {}
-    for item in itens:
-        motivo = pontuar(item, alvo)
-        if motivo:
-            motivos[item['url_anuncio']] = motivo
-
-    fortes = {'endereco', 'coordenada', 'nome'}
-    # Endereço com número e algum anúncio nele: só esse endereço é o prédio.
-    # Quem apenas cai no mesmo ponto vira provável — o mesmo ponto já juntou
-    # "Rua A, 298" e "Rua B, 100" (medido). Sem anúncio no endereço exato, o
-    # ponto confirma, e a resposta sai como "mesmo local".
-    if alvo['numero'] and 'endereco' in motivos.values():
-        fortes = {'endereco', 'nome'}
-    confirmados = {u for u, m in motivos.items() if m in fortes}
-    # Nome sem lugar para conferir (nada de endereço nem bairro informados):
-    # o bairro predominante entre os que casaram pelo nome decide; os demais
-    # viram prováveis. Medido: "Reserva Arvoredo" trazia 3 anúncios do Eng.
-    # Luciano Cavalcante confirmados junto com os 38 do Barroso.
-    if not alvo['bairro'] and not geo:
-        por_nome = [u for u in confirmados if motivos[u] == 'nome']
-        contagem = Counter(normalizar(por_url_0[u].get('bairro') or '') for u in por_nome)
-        contagem.pop('', None)
-        if len(contagem) > 1:
-            dominante = contagem.most_common(1)[0][0]
-            for u in por_nome:
-                b = normalizar(por_url_0[u].get('bairro') or '')
-                if b and b != dominante:
-                    confirmados.discard(u)
-                    motivos[u] = 'texto'   # cita o nome, mas em outro lugar
-    sinais = {motivos[u] for u in confirmados}
-    # O resto do prédio de cada confirmado entra também.
     por_url = {i['url_anuncio']: i for i in itens}
+    avaliacoes = {u: avaliar_evidencias(item, alvo, referencia if not conflito_oficial else None)
+                  for u, item in por_url.items()}
+    motivos = {u: a['motivo'] for u, a in avaliacoes.items() if a['motivo']}
+    classes = {u: a['classe'] for u, a in avaliacoes.items() if a['codigos']}
+    evidencias = {u: list(a['evidencias']) for u, a in avaliacoes.items() if a['codigos']}
+    for u, avaliacao in avaliacoes.items():
+        por_url[u]['fontes_identidade'] = avaliacao['fontes']
+
+    # Havendo pelo menos uma linha com rua+número exatos, ela prevalece sobre
+    # anúncios apenas no mesmo ponto (uma esquina pode compartilhar coordenada).
+    if (alvo.get('numero') or alvo.get('numero_referencia')) and any(
+        'numero' in a['codigos'] and not a['conflitos'] for a in avaliacoes.values()
+    ):
+        for u, avaliacao in avaliacoes.items():
+            if classes.get(u) == 'direto' and 'coordenada' in avaliacao['codigos'] \
+                    and 'numero' not in avaliacao['codigos']:
+                classes[u] = 'provavel'
+                evidencias[u].append('fora do núcleo: há anúncio com rua e número exatos')
+
+    # Nome sem localização: duas ou mais ocorrências no mesmo bairro se
+    # corroboram. Uma ocorrência isolada continua provável.
+    if alvo.get('nome') and not (alvo.get('rua') or alvo.get('rua_referencia') or alvo.get('bairro') or geo):
+        por_nome = [u for u, a in avaliacoes.items() if 'nome_estruturado' in a['codigos'] and not a['conflitos']]
+        contagem_bairro = Counter(normalizar(por_url[u].get('bairro') or '') for u in por_nome)
+        contagem_bairro.pop('', None)
+        if contagem_bairro:
+            dominante, quantidade = contagem_bairro.most_common(1)[0]
+            if quantidade >= 2:
+                for u in por_nome:
+                    if normalizar(por_url[u].get('bairro') or '') == dominante:
+                        classes[u] = 'corroborado'
+                        evidencias[u].append('nome repetido em anúncios do mesmo bairro')
+
+    confirmados = {u for u, classe in classes.items() if classe in {'direto', 'corroborado'}}
+    # O elo nome ↔ endereço é formado pelo alvo informado e, quando não há
+    # divergência, pelo catálogo oficial. Sinais isolados só sobem quando há
+    # convergência entre anúncios diferentes.
+    nome_urls = {u for u, a in avaliacoes.items() if not a['conflitos'] and
+                 a['codigos'] & {'nome_estruturado', 'mencao_nome'}}
+    local_urls = {u for u, a in avaliacoes.items() if not a['conflitos'] and
+                  a['codigos'] & {'rua', 'numero', 'coordenada'}}
+    ponte = bool((referencia and not conflito_oficial) or
+                 (alvo.get('nome') and (alvo.get('rua') or alvo.get('rua_referencia'))))
+    if ponte and nome_urls and local_urls:
+        for u in nome_urls | local_urls:
+            if classes.get(u) != 'direto':
+                classes[u] = 'corroborado'
+                confirmados.add(u)
+                evidencias.setdefault(u, []).append('nome e endereço corroborados entre anúncios relacionados')
+                if referencia and not conflito_oficial:
+                    evidencias[u].append(f"identidade confirmada pelo catálogo {referencia['fonte'].upper()}")
+
+    # Uma menção textual entra quando converge com o bairro de um núcleo já
+    # confirmado (comportamento antigo, agora explicitamente corroborado).
+    bairros_conf = Counter(normalizar(por_url[u].get('bairro') or '') for u in confirmados)
+    bairros_conf.pop('', None)
+    dominante = bairros_conf.most_common(1)[0][0] if bairros_conf else None
+    if dominante and alvo.get('frase') and len(alvo['frase'].split()) >= 2:
+        for u, avaliacao in avaliacoes.items():
+            if u not in confirmados and not avaliacao['conflitos'] and 'mencao_nome' in avaliacao['codigos'] \
+                    and normalizar(por_url[u].get('bairro') or '') == dominante:
+                classes[u] = 'corroborado'
+                confirmados.add(u)
+                evidencias[u].append('menção ao nome no mesmo bairro do núcleo confirmado')
+
+    sinais = {motivos[u] for u in confirmados if u in motivos}
+    # O resto do prédio de cada confirmado entra também, mas um conflito
+    # explícito nunca é apagado pelo agrupamento.
     for u in list(confirmados):
         gid = por_url[u].get('grupo_id')
         if gid not in resumos or por_url[u].get('vinculo_grupo') == 'provavel':
@@ -362,9 +551,12 @@ async def procurar_empreendimento(
         nivel_grupo = resumos[gid]['nivel']
         motivo_grupo = {NIVEL_PREDIO: 'mesmo_predio', NIVEL_LOCAL: 'mesmo_local'}.get(nivel_grupo, 'nome')
         for m in membros.get(gid, []):
-            if m['url_anuncio'] not in confirmados:
-                confirmados.add(m['url_anuncio'])
-                motivos.setdefault(m['url_anuncio'], motivo_grupo)
+            mu = m['url_anuncio']
+            if mu not in confirmados and not avaliacoes[mu]['conflitos']:
+                confirmados.add(mu)
+                classes[mu] = 'corroborado'
+                motivos.setdefault(mu, motivo_grupo)
+                evidencias.setdefault(mu, []).append('ligado ao núcleo pelo agrupamento do mesmo empreendimento')
         # Anexos do prédio: prováveis, fora do preço.
         for m in anexos.get(gid, []):
             if m['url_anuncio'] not in confirmados:
@@ -372,27 +564,15 @@ async def procurar_empreendimento(
         sinais |= set(resumos[gid]['sinais'])
     sinais &= {'endereco', 'coordenada', 'nome'}
 
-    # O nome digitado no texto do anúncio ("Villa Venezia liga 9 87…", sem
-    # prefixo que a extração reconheça) confirma quando está no mesmo bairro
-    # dos já confirmados. Precisa de 2+ palavras: "Jardins" sozinho no texto
-    # é adjetivo de metade dos anúncios.
-    if confirmados and alvo['frase'] and len(alvo['frase'].split()) >= 2:
-        bairros_conf = Counter(normalizar(por_url[u].get('bairro') or '') for u in confirmados)
-        bairros_conf.pop('', None)
-        dominante = bairros_conf.most_common(1)[0][0] if bairros_conf else None
-        for u, m in motivos.items():
-            if m == 'texto' and u not in confirmados and dominante \
-                    and normalizar(por_url[u].get('bairro') or '') == dominante:
-                confirmados.add(u)
-
     provaveis = sorted(
-        (por_url[u] for u, m in motivos.items() if u not in confirmados),
+        (por_url[u] for u in classes if u not in confirmados),
         key=lambda i: (_ORDEM_MOTIVO.get(motivos[i['url_anuncio']], 9), i.get('preco_m2') or 0),
     )[:MAX_PROVAVEIS]
 
     nivel = _nivel_mais_fraco([motivos[u] for u in confirmados], NIVEL_NOME)
     resposta = await _montar_resposta(
         db, cidade, itens, [por_url[u] for u in confirmados], motivos, sinais, provaveis, nivel,
+        classes, evidencias,
     )
     resposta['alvo'] = {
         'nome': nome, 'endereco': endereco,
@@ -401,6 +581,7 @@ async def procurar_empreendimento(
         'endereco_encontrado': geo.get('descricao') if geo else None,
         # False = o mapa achou só a rua; a busca por raio não foi usada.
         'geocodificacao_precisa': bool(geo and geo.get('precisa')),
+        'conflito_referencia_oficial': conflito_oficial,
     }
     # Prédios onde caíram os prováveis — rua digitada sem número costuma ter
     # alguns poucos prédios com anúncio, e escolher um deles é mais útil que
@@ -411,6 +592,14 @@ async def procurar_empreendimento(
     )
     resposta['sugestoes'] = [resumos[g] for g, _ in contagem.most_common(8) if g in resumos]
     resposta['total_historico'] = len(itens)
+    resposta['referencia_oficial'] = referencia
+    resposta['resumo_vinculos'] = {
+        'direto': sum(1 for u in confirmados if classes.get(u) == 'direto'),
+        'corroborado': sum(1 for u in confirmados if classes.get(u) == 'corroborado'),
+        'provavel': len(provaveis),
+        'participam_mediana': len(confirmados),
+    }
+    resposta['diagnostico_especifico'] = diagnostico
     return resposta
 
 

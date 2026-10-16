@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from database.connection import Base
@@ -75,3 +75,23 @@ class ReferencialMRV(Base):
     quartos       = Column(Integer, nullable=True)
     preco_m2      = Column(Float, nullable=False)
     atualizado_em = Column(DateTime, default=datetime.utcnow)
+
+
+class CacheIdentidade(Base):
+    """Cache durável de dados usados somente para identificar empreendimentos.
+
+    ``payload`` nunca participa da tabela de anúncios nem do cálculo de preço.
+    O cache único atende tanto listagens/detalhes oficiais quanto o detalhe de
+    um anúncio; ``tipo`` e ``chave`` formam a identidade lógica da entrada.
+    """
+    __tablename__ = "cache_identidade"
+    __table_args__ = (UniqueConstraint("tipo", "chave", name="uq_cache_identidade_tipo_chave"),)
+
+    id         = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tipo       = Column(String, nullable=False, index=True)
+    chave      = Column(String, nullable=False, index=True)
+    fonte      = Column(String, nullable=False)
+    url        = Column(Text, nullable=True)
+    payload    = Column(Text, nullable=False)
+    lido_em    = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expira_em  = Column(DateTime, nullable=False, index=True)

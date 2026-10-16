@@ -281,7 +281,7 @@ async def procurar_empreendimento_endpoint(
                     coleta = "feita"
         resposta = await procurar_empreendimento(
             db, payload.cidade, payload.nome, payload.endereco, payload.raio_m, payload.bairro,
-            coletados=coletados,
+            coletados=coletados, aprofundar=payload.aprofundar,
         )
         resposta["coleta"] = coleta
         return resposta
