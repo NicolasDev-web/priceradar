@@ -15,7 +15,7 @@ from repositories.busca_repo import salvar_busca  # noqa: E402
 from repositories.identidade_cache_repo import gravar_cache, ler_cache  # noqa: E402
 from services import catalogos_oficiais, detalhes_anuncios, dossie, geocoding  # noqa: E402
 from services.catalogos_oficiais import (  # noqa: E402
-    PROVEDORES, _nome_catalogo_compativel, extrair_referencia_detalhe,
+    PROVEDORES, _nome_catalogo_compativel, _url_direta, extrair_referencia_detalhe,
 )
 from services.detalhes_anuncios import extrair_detalhe, selecionar_candidatos  # noqa: E402
 from services.search import aplicar_agrupamento  # noqa: E402
@@ -86,6 +86,13 @@ def test_catalogo_nao_confunde_nome_curto_com_pagina_institucional():
     assert not _nome_catalogo_compativel("+70 empreendimentos com subsídio e entrada facilitada", alvo)
     assert not _nome_catalogo_compativel("Mais", alvo)
     assert _nome_catalogo_compativel("Parque Marista", alvo)
+
+
+def test_mrv_monta_rota_direta_do_empreendimento():
+    mrv = next(p for p in PROVEDORES if p.nome == "mrv")
+    assert _url_direta(mrv, "Fortaleza, CE", "Parque Marista")["url"] == (
+        "https://www.mrv.com.br/imoveis/ceara/fortaleza/apartamentos-parque-marista"
+    )
 
 
 def test_parque_marista_combina_nome_e_endereco(monkeypatch):

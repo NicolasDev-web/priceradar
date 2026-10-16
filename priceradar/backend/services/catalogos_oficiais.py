@@ -54,6 +54,23 @@ def _cidade(cidade: str) -> tuple[str, str, str]:
     return nome, uf, slug
 
 
+def _url_direta(provedor: ProvedorOficial, cidade: str, nome: str) -> dict | None:
+    """Rotas de detalhe conhecidas para catálogos que não publicam lista confiável."""
+    if provedor.nome != "mrv":
+        return None
+    _, uf, cidade_slug = _cidade(cidade)
+    estados = {"ce": "ceara", "sp": "sao-paulo", "rj": "rio-de-janeiro",
+               "mg": "minas-gerais", "go": "goias", "ba": "bahia", "pe": "pernambuco",
+               "pr": "parana", "sc": "santa-catarina", "rs": "rio-grande-do-sul",
+               "es": "espirito-santo", "df": "distrito-federal"}
+    estado = estados.get(uf.lower())
+    nome_slug = re.sub(r"[^a-z0-9]+", "-", normalizar(nome)).strip("-")
+    if not estado or not nome_slug:
+        return None
+    url = f"{provedor.dominio}/imoveis/{estado}/{cidade_slug}/apartamentos-{nome_slug}"
+    return {"nome": nome, "url": url}
+
+
 def _nome_catalogo_compativel(candidato: str | None, alvo: str) -> bool:
     """Exige os tokens distintivos; a similaridade de caracteres aceita falsos positivos curtos.
 
@@ -192,6 +209,9 @@ async def buscar_referencia_oficial(db, cidade: str, nome: str | None, diagnosti
     escolhas: list[tuple[float, ProvedorOficial, dict]] = []
     inicio = time.monotonic()
     for provedor in PROVEDORES:
+        direto = _url_direta(provedor, cidade, nome)
+        if direto and _nome_catalogo_compativel(direto.get("nome"), alvo):
+            escolhas.append((1.0, provedor, direto))
         restante = 20.0 - (time.monotonic() - inicio)
         if restante <= 0:
             diagnostico["falhas_por_fonte"]["catalogos_oficiais"] = "timeout_20s"
