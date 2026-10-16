@@ -101,6 +101,7 @@ def test_parque_marista_combina_nome_e_endereco(monkeypatch):
             _emp("endereco", 280_000, endereco="Rua Conselheiro Tristão, 60", portal="vivareal"),
             _emp("numero-errado", 999_000, endereco="Rua Conselheiro Tristão, 600", portal="zap"),
             _emp("outro-bairro", 888_000, titulo="Parque Marista", bairro="Aldeota"),
+            _emp("so-bairro", 777_000, titulo="Apartamento 4 quartos", bairro="Benfica", portal="zap"),
         ])
         return await dossie.procurar_empreendimento(
             db, "Fortaleza, CE", "Parque Marista", "Rua Conselheiro Tristão, 60",
@@ -112,8 +113,8 @@ def test_parque_marista_combina_nome_e_endereco(monkeypatch):
     assert confirmados["endereco"]["classe_vinculo"] == "direto"
     assert confirmados["nome"]["classe_vinculo"] == "corroborado"
     assert resposta["grupo"]["preco_m2_mediana"] == pytest.approx(5_400)
-    assert {a["url_anuncio"] for a in resposta["provaveis"]} == {"numero-errado", "outro-bairro"}
-    assert resposta["resumo_vinculos"] == {"direto": 1, "corroborado": 1, "provavel": 2,
+    assert {a["url_anuncio"] for a in resposta["provaveis"]} == {"numero-errado", "outro-bairro", "so-bairro"}
+    assert resposta["resumo_vinculos"] == {"direto": 1, "corroborado": 1, "provavel": 3,
                                             "participam_mediana": 2}
 
 

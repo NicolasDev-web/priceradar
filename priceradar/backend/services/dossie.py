@@ -566,7 +566,9 @@ async def procurar_empreendimento(
 
     provaveis = sorted(
         (por_url[u] for u in classes if u not in confirmados),
-        key=lambda i: (_ORDEM_MOTIVO.get(motivos[i['url_anuncio']], 9), i.get('preco_m2') or 0),
+        # Bairro/construtora também são evidências, mas não têm equivalente no
+        # campo legado `motivo`. Continuam prováveis e vão ao fim da lista.
+        key=lambda i: (_ORDEM_MOTIVO.get(motivos.get(i['url_anuncio']), 9), i.get('preco_m2') or 0),
     )[:MAX_PROVAVEIS]
 
     nivel = _nivel_mais_fraco([motivos[u] for u in confirmados], NIVEL_NOME)
