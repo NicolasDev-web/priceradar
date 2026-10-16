@@ -14,7 +14,9 @@ from models import BuscaRequest, BuscaResponse, Empreendimento  # noqa: E402
 from repositories.busca_repo import salvar_busca  # noqa: E402
 from repositories.identidade_cache_repo import gravar_cache, ler_cache  # noqa: E402
 from services import catalogos_oficiais, detalhes_anuncios, dossie, geocoding  # noqa: E402
-from services.catalogos_oficiais import PROVEDORES, extrair_referencia_detalhe  # noqa: E402
+from services.catalogos_oficiais import (  # noqa: E402
+    PROVEDORES, _nome_catalogo_compativel, extrair_referencia_detalhe,
+)
 from services.detalhes_anuncios import extrair_detalhe, selecionar_candidatos  # noqa: E402
 from services.search import aplicar_agrupamento  # noqa: E402
 
@@ -77,6 +79,13 @@ def test_limite_de_detalhes_e_quatro_por_portal():
     escolhidos = selecionar_candidatos(itens)
     assert len(escolhidos) == 12
     assert max(sum(i["portal"] == p for i in escolhidos) for p in {i["portal"] for i in escolhidos}) <= 4
+
+
+def test_catalogo_nao_confunde_nome_curto_com_pagina_institucional():
+    alvo = "marista"
+    assert not _nome_catalogo_compativel("+70 empreendimentos com subsídio e entrada facilitada", alvo)
+    assert not _nome_catalogo_compativel("Mais", alvo)
+    assert _nome_catalogo_compativel("Parque Marista", alvo)
 
 
 def test_parque_marista_combina_nome_e_endereco(monkeypatch):

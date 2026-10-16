@@ -54,6 +54,24 @@ def _cidade(cidade: str) -> tuple[str, str, str]:
     return nome, uf, slug
 
 
+def _nome_catalogo_compativel(candidato: str | None, alvo: str) -> bool:
+    """Exige os tokens distintivos; a similaridade de caracteres aceita falsos positivos curtos.
+
+    ``normalizar_nome`` já remove termos genéricos como "Parque" e
+    "Residencial", então Parque Marista compara pela palavra distintiva
+    ``marista``. Nomes de um token precisam de igualdade exata.
+    """
+    nome = normalizar_nome(candidato)
+    termos = set(alvo.split())
+    encontrados = set(nome.split()) if nome else set()
+    if not termos or not encontrados:
+        return False
+    if termos <= encontrados:
+        return True
+    return len(termos) >= 2 and similaridade_nome(nome, alvo) >= .9 \
+        and bool(termos & encontrados)
+
+
 def _jsonld(soup: BeautifulSoup) -> list[dict]:
     saida: list[dict] = []
     for tag in soup.find_all("script", type="application/ld+json"):
@@ -185,8 +203,9 @@ async def buscar_referencia_oficial(db, cidade: str, nome: str | None, diagnosti
             diagnostico["falhas_por_fonte"][provedor.nome] = "timeout"
             continue
         for item in listagem:
-            nota = similaridade_nome(normalizar_nome(item.get("nome")), alvo)
-            if nota >= 0.72:
+            nome_item = normalizar_nome(item.get("nome"))
+            nota = similaridade_nome(nome_item, alvo)
+            if _nome_catalogo_compativel(nome_item, alvo):
                 escolhas.append((nota, provedor, item))
     for _, provedor, item in sorted(escolhas, key=lambda x: x[0], reverse=True):
         url = item["url"]
@@ -215,7 +234,7 @@ async def buscar_referencia_oficial(db, cidade: str, nome: str | None, diagnosti
             await gravar_cache(db, "oficial_detalhe", chave, provedor.nome, url,
                                referencia, VALIDADE_DETALHE)
         nomes = [referencia.get("nome"), *(referencia.get("aliases") or [])]
-        if max((similaridade_nome(normalizar_nome(n), alvo) for n in nomes if n), default=0) >= 0.72:
+        if any(_nome_catalogo_compativel(n, alvo) for n in nomes if n):
             return referencia
     return None
 
